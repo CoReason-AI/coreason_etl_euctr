@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+import json
 from datetime import date, datetime
 
 import pytest
@@ -164,3 +165,56 @@ def test_eu_trial_empty_strings_vs_none() -> None:
         trial_title="",  # type: ignore[call-arg]
     )
     assert trial_empty.trial_title == ""
+
+
+def test_eu_trial_serialization() -> None:
+    """Test that model serialization outputs valid JSON with ISO dates."""
+    trial = EuTrial(
+        eudract_number="2023-123",
+        url_source="http://example.com",
+        start_date=date(2023, 10, 25),
+        trial_status="Ongoing",  # type: ignore[call-arg]
+    )
+    json_output = trial.model_dump_json()
+    data = json.loads(json_output)
+
+    assert data["eudract_number"] == "2023-123"
+    assert data["start_date"] == "2023-10-25"
+    # Verify last_updated is present and ISO formatted
+    assert "last_updated" in data
+    # Basic check for ISO format (YYYY-MM-DD...)
+    assert data["last_updated"].startswith("20")
+
+
+def test_eu_trial_explicit_none_for_required() -> None:
+    """Test validation error when passing explicit None to a required field."""
+    with pytest.raises(ValidationError) as excinfo:
+        EuTrial(
+            eudract_number=None,  # type: ignore[arg-type, call-arg]
+            url_source="http://test.com",
+        )
+    assert "eudract_number" in str(excinfo.value)
+    assert "Input should be a valid string" in str(excinfo.value)
+
+
+def test_eu_trial_whitespace_preservation() -> None:
+    """Test that whitespace is preserved in string fields."""
+    trial = EuTrial(
+        eudract_number="  123  ",
+        url_source="http://test.com",
+        sponsor_name="  Acme Corp  ",  # type: ignore[call-arg]
+    )
+    assert trial.eudract_number == "  123  "
+    assert trial.sponsor_name == "  Acme Corp  "
+
+
+def test_eu_trial_very_long_strings() -> None:
+    """Test robustness with very large string payloads."""
+    long_title = "A" * 10_000  # 10KB string
+    trial = EuTrial(
+        eudract_number="123",
+        url_source="http://test.com",
+        trial_title=long_title,  # type: ignore[call-arg]
+    )
+    assert len(trial.trial_title) == 10_000  # type: ignore
+    assert trial.trial_title == long_title
