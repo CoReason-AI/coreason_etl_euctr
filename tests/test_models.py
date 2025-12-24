@@ -11,9 +11,8 @@
 from datetime import date, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from coreason_etl_euctr.models import EuTrial, EuTrialCondition, EuTrialDrug
+from pydantic import ValidationError
 
 
 def test_eu_trial_valid() -> None:
@@ -35,7 +34,7 @@ def test_eu_trial_valid() -> None:
 def test_eu_trial_missing_required() -> None:
     """Test validation error for missing required fields in EuTrial."""
     with pytest.raises(ValidationError) as excinfo:
-        EuTrial(sponsor_name="Acme Corp")  # Missing eudract_number and url_source
+        EuTrial(sponsor_name="Acme Corp")  # type: ignore[call-arg]
 
     assert "eudract_number" in str(excinfo.value)
     assert "url_source" in str(excinfo.value)
@@ -43,7 +42,7 @@ def test_eu_trial_missing_required() -> None:
 
 def test_eu_trial_defaults() -> None:
     """Test default values for EuTrial."""
-    trial = EuTrial(eudract_number="123", url_source="http://test.com")
+    trial = EuTrial(eudract_number="123", url_source="http://test.com")  # type: ignore[call-arg]
     assert trial.sponsor_name is None
     assert trial.start_date is None
     assert isinstance(trial.last_updated, datetime)
@@ -65,7 +64,7 @@ def test_eu_trial_drug_valid() -> None:
 def test_eu_trial_drug_missing_fk() -> None:
     """Test validation error for missing foreign key in EuTrialDrug."""
     with pytest.raises(ValidationError):
-        EuTrialDrug(drug_name="Test")
+        EuTrialDrug(drug_name="Test")  # type: ignore[call-arg]
 
 
 def test_eu_trial_condition_valid() -> None:
@@ -82,4 +81,4 @@ def test_eu_trial_condition_valid() -> None:
 def test_eu_trial_condition_missing_fk() -> None:
     """Test validation error for missing foreign key in EuTrialCondition."""
     with pytest.raises(ValidationError):
-        EuTrialCondition(condition_name="Flu")
+        EuTrialCondition(condition_name="Flu")  # type: ignore[call-arg]

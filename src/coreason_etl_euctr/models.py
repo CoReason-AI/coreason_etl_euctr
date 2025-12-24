@@ -25,9 +25,7 @@ class EuTrial(BaseModel):
     start_date: Optional[date] = Field(
         None, description="Date of Competent Authority Decision or Date record first entered."
     )
-    trial_status: Optional[str] = Field(
-        None, description="Status of the trial (e.g., Completed, Prematurely Ended)."
-    )
+    trial_status: Optional[str] = Field(None, description="Status of the trial (e.g., Completed, Prematurely Ended).")
     url_source: str = Field(..., description="The source URL from which this record was scraped.")
     last_updated: datetime = Field(
         default_factory=datetime.now, description="Timestamp when this record was processed."
