@@ -92,7 +92,7 @@ def test_eu_trial_date_coercion() -> None:
     trial = EuTrial(
         eudract_number="123",
         url_source="http://test.com",
-        start_date="2023-01-01",  # type: ignore[arg-type]
+        start_date="2023-01-01",  # type: ignore[arg-type, call-arg]
     )
     assert trial.start_date == date(2023, 1, 1)
 
@@ -103,7 +103,7 @@ def test_eu_trial_invalid_date() -> None:
         EuTrial(
             eudract_number="123",
             url_source="http://test.com",
-            start_date="not-a-date",  # type: ignore[arg-type]
+            start_date="not-a-date",  # type: ignore[arg-type, call-arg]
         )
     assert "start_date" in str(excinfo.value)
 
@@ -112,7 +112,7 @@ def test_eu_trial_type_coercion_failure() -> None:
     """Test that int to str coercion does not happen by default in Pydantic V2."""
     with pytest.raises(ValidationError) as excinfo:
         EuTrial(
-            eudract_number=12345,  # type: ignore[arg-type]
+            eudract_number=12345,  # type: ignore[arg-type, call-arg]
             url_source="http://test.com",
         )
     assert "eudract_number" in str(excinfo.value)
@@ -125,7 +125,7 @@ def test_eu_trial_unicode_handling() -> None:
     trial = EuTrial(
         eudract_number="123",
         url_source="http://test.com",
-        sponsor_name=unicode_str,
+        sponsor_name=unicode_str,  # type: ignore[call-arg]
     )
     assert trial.sponsor_name == unicode_str
 
@@ -151,12 +151,16 @@ def test_eu_trial_empty_strings_vs_none() -> None:
     """Test the difference between passing empty string and None for Optional[str]."""
     # Case 1: Passing None
     trial_none = EuTrial(
-        eudract_number="1", url_source="http://t.com", trial_title=None
+        eudract_number="1",
+        url_source="http://t.com",
+        trial_title=None,  # type: ignore[call-arg]
     )
     assert trial_none.trial_title is None
 
     # Case 2: Passing empty string
     trial_empty = EuTrial(
-        eudract_number="2", url_source="http://t.com", trial_title=""
+        eudract_number="2",
+        url_source="http://t.com",
+        trial_title="",  # type: ignore[call-arg]
     )
     assert trial_empty.trial_title == ""
