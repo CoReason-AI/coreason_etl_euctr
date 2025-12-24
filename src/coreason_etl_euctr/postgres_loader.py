@@ -8,12 +8,12 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-import os
 from typing import IO, Any, Optional
 
 import psycopg
-from coreason_etl_euctr.loader import BaseLoader
 from loguru import logger
+
+from coreason_etl_euctr.loader import BaseLoader
 
 
 class PostgresLoader(BaseLoader):
