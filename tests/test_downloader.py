@@ -183,15 +183,19 @@ def test_download_trial_5xx_error_fallback(tmp_path: Path, mock_httpx_client: Ma
     # 1st: 500 Internal Server Error
     response_500 = MagicMock()
     response_500.status_code = 500
+
     def raise_500() -> None:
         raise httpx.HTTPStatusError("Server Error", request=MagicMock(), response=response_500)
+
     response_500.raise_for_status.side_effect = raise_500
 
     # 2nd: 503 Service Unavailable
     response_503 = MagicMock()
     response_503.status_code = 503
+
     def raise_503() -> None:
         raise httpx.HTTPStatusError("Service Unavailable", request=MagicMock(), response=response_503)
+
     response_503.raise_for_status.side_effect = raise_503
 
     # 3rd: 200 OK
@@ -228,11 +232,7 @@ def test_download_trial_mixed_failures(tmp_path: Path, mock_httpx_client: MagicM
     response_200.status_code = 200
     response_200.text = "<html>Success</html>"
 
-    mock_httpx_client.get.side_effect = [
-        response_404,
-        httpx.ConnectError("Network Down"),
-        response_200
-    ]
+    mock_httpx_client.get.side_effect = [response_404, httpx.ConnectError("Network Down"), response_200]
 
     with patch("time.sleep"):
         result = downloader.download_trial("2023-123")
