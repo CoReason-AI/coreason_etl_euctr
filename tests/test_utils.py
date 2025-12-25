@@ -18,7 +18,7 @@ from coreason_etl_euctr.utils import clean_text, extract_field_by_label, parse_f
 def test_clean_text() -> None:
     assert clean_text("  Hello   World  ") == "Hello World"
     assert clean_text("Hello\xa0World") == "Hello World"
-    assert clean_text(None) == "" # type: ignore
+    assert clean_text(None) == ""  # type: ignore
 
 
 def test_parse_flexible_date() -> None:
@@ -113,6 +113,7 @@ def test_extract_field_empty_value() -> None:
     # get_text(strip=True) on "   " returns "".
     # if "" -> False. Returns None.
     assert extract_field_by_label(soup, "Label") is None
+
 
 def test_extract_field_value_is_empty_string() -> None:
     """Explicitly test the branch where get_text returns empty string."""

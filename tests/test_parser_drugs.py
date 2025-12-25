@@ -8,7 +8,6 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-import pytest
 from coreason_etl_euctr.parser import Parser
 
 
@@ -114,7 +113,7 @@ def test_parse_drugs_empty_or_no_drugs() -> None:
 
 def test_parse_drugs_malformed_html() -> None:
     """Test parsing malformed HTML does not crash."""
-    html = "<table><tr><td>Trade name: Missing value</td>" # Unclosed tags
+    html = "<table><tr><td>Trade name: Missing value</td>"  # Unclosed tags
     parser = Parser()
     drugs = parser.parse_drugs(html, "2023-123")
 

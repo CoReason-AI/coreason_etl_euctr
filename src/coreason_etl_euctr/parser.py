@@ -13,7 +13,6 @@ from datetime import date
 from typing import List, Optional, Union
 
 from bs4 import BeautifulSoup, Tag
-from loguru import logger
 
 from coreason_etl_euctr.models import EuTrial, EuTrialDrug
 from coreason_etl_euctr.utils import extract_field_by_label, parse_flexible_date
@@ -90,9 +89,7 @@ class Parser:
             "Pharmaceutical form",
         ]
 
-        pattern = re.compile(
-            r"(" + "|".join([re.escape(label) for label in target_labels]) + r")", re.IGNORECASE
-        )
+        pattern = re.compile(r"(" + "|".join([re.escape(label) for label in target_labels]) + r")", re.IGNORECASE)
 
         markers = soup.find_all(string=pattern)
         candidate_tables = []
