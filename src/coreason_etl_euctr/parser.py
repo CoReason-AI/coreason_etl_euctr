@@ -14,7 +14,7 @@ from typing import List, Optional, Union
 
 from bs4 import BeautifulSoup, Tag
 
-from coreason_etl_euctr.models import EuTrial, EuTrialDrug, EuTrialCondition
+from coreason_etl_euctr.models import EuTrial, EuTrialCondition, EuTrialDrug
 from coreason_etl_euctr.utils import extract_field_by_label, parse_flexible_date
 
 
@@ -145,7 +145,9 @@ class Parser:
 
         return conditions
 
-    def _parse_single_condition(self, soup: Union[BeautifulSoup, Tag], eudract_number: str) -> Optional[EuTrialCondition]:
+    def _parse_single_condition(
+        self, soup: Union[BeautifulSoup, Tag], eudract_number: str
+    ) -> Optional[EuTrialCondition]:
         """Extract condition fields from a table."""
         condition_name = extract_field_by_label(soup, "Medical condition")
         if not condition_name:
@@ -167,11 +169,7 @@ class Parser:
         if not condition_name and not meddra_code:
             return None
 
-        return EuTrialCondition(
-            eudract_number=eudract_number,
-            condition_name=condition_name,
-            meddra_code=meddra_code
-        )
+        return EuTrialCondition(eudract_number=eudract_number, condition_name=condition_name, meddra_code=meddra_code)
 
     def _parse_single_drug(self, soup: Union[BeautifulSoup, Tag], eudract_number: str) -> Optional[EuTrialDrug]:
         """
