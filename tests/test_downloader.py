@@ -174,3 +174,69 @@ def test_save_to_disk_io_error(tmp_path: Path, mock_httpx_client: MagicMock) -> 
     with patch("builtins.open", side_effect=IOError("Disk full")), patch("time.sleep"):
         with pytest.raises(IOError):
             downloader.download_trial("2023-123")
+
+
+def test_download_trial_5xx_error_fallback(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
+    """Test that 5xx Server Errors trigger fallback to the next country."""
+    downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
+
+    # 1st: 500 Internal Server Error
+    response_500 = MagicMock()
+    response_500.status_code = 500
+    def raise_500() -> None:
+        raise httpx.HTTPStatusError("Server Error", request=MagicMock(), response=response_500)
+    response_500.raise_for_status.side_effect = raise_500
+
+    # 2nd: 503 Service Unavailable
+    response_503 = MagicMock()
+    response_503.status_code = 503
+    def raise_503() -> None:
+        raise httpx.HTTPStatusError("Service Unavailable", request=MagicMock(), response=response_503)
+    response_503.raise_for_status.side_effect = raise_503
+
+    # 3rd: 200 OK
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.text = "<html>Success</html>"
+
+    mock_httpx_client.get.side_effect = [response_500, response_503, response_200]
+
+    with patch("time.sleep"):
+        result = downloader.download_trial("2023-123")
+
+    assert result is True
+    # Should have tried all 3 countries
+    assert mock_httpx_client.get.call_count == 3
+
+    # Verify file saved
+    assert (tmp_path / "2023-123.html").read_text(encoding="utf-8") == "<html>Success</html>"
+    # Verify metadata shows DE (3rd priority)
+    assert "source_country=DE" in (tmp_path / "2023-123.meta").read_text(encoding="utf-8")
+
+
+def test_download_trial_mixed_failures(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
+    """Test a mix of 404, Network Error, and Success."""
+    downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
+
+    # 1st (3rd): 404 Not Found
+    response_404 = MagicMock()
+    response_404.status_code = 404
+
+    # 2nd (GB): Network Connection Error
+    # 3rd (DE): Success
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.text = "<html>Success</html>"
+
+    mock_httpx_client.get.side_effect = [
+        response_404,
+        httpx.ConnectError("Network Down"),
+        response_200
+    ]
+
+    with patch("time.sleep"):
+        result = downloader.download_trial("2023-123")
+
+    assert result is True
+    assert mock_httpx_client.get.call_count == 3
+    assert (tmp_path / "2023-123.html").read_text(encoding="utf-8") == "<html>Success</html>"
