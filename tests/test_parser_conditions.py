@@ -8,7 +8,6 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-import pytest
 from coreason_etl_euctr.parser import Parser
 
 
