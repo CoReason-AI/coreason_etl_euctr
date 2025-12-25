@@ -11,6 +11,7 @@ packages = [{include = "coreason_etl_euctr", from = "src"}]
 python = ">=3.12, <3.15"
 loguru = "^0.7.2"
 pydantic = "^2.12.5"
+psycopg = {extras = ["binary"], version = "^3.3.2"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
