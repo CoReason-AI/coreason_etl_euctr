@@ -10,12 +10,12 @@
 
 import re
 from datetime import date, datetime
-from typing import Optional
+from typing import List, Optional, Union
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from loguru import logger
 
-from coreason_etl_euctr.models import EuTrial
+from coreason_etl_euctr.models import EuTrial, EuTrialDrug
 
 
 class Parser:
@@ -82,7 +82,92 @@ class Parser:
             url_source=url_source,
         )
 
-    def _extract_field(self, soup: BeautifulSoup, label_text: str) -> Optional[str]:
+    def parse_drugs(self, html_content: str, eudract_number: str) -> List[EuTrialDrug]:
+        """
+        Parse Section D to extract one or more drugs.
+
+        Args:
+            html_content: The raw HTML string.
+            eudract_number: The trial ID to link these drugs to.
+
+        Returns:
+            List[EuTrialDrug]: A list of extracted drugs.
+        """
+        soup = BeautifulSoup(html_content, "html.parser")
+        drugs: List[EuTrialDrug] = []
+
+        # Strategy: Find all tables that contain drug-specific labels.
+        # This handles multiple drugs (one table per drug) and robustly finds them
+        # without relying on fixed section IDs.
+        # Labels: "Trade name", "Name of Active Substance", "Pharmaceutical form"
+        target_labels = [
+            "Trade name",
+            "Name of Active Substance",
+            "Product Name",  # sometimes used instead of Trade name
+            "Pharmaceutical form",
+        ]
+
+        # Use a regex that matches any of the target labels
+        pattern = re.compile(
+            r"(" + "|".join([re.escape(label) for label in target_labels]) + r")", re.IGNORECASE
+        )
+
+        # Find all markers
+        markers = soup.find_all(string=pattern)
+
+        # Collect unique parent tables maintaining order
+        candidate_tables = []
+        seen_ids = set()
+
+        for marker in markers:
+            # Find closest parent table
+            parent_table = marker.find_parent("table")
+            if parent_table and id(parent_table) not in seen_ids:
+                # Double check if this table is likely a Drug table (Section D)
+                # Or at least not the main container if possible.
+                # Usually checking if it contains "Section D" or "IMP" helps,
+                # but sometimes the "Section D" header is outside this table (sibling).
+                # For robustness, we process any table having these specific fields.
+                candidate_tables.append(parent_table)
+                seen_ids.add(id(parent_table))
+
+        for tbl in candidate_tables:
+            drug = self._parse_single_drug(tbl, eudract_number)
+            if drug:
+                drugs.append(drug)
+
+        return drugs
+
+    def _parse_single_drug(self, soup: Union[BeautifulSoup, Tag], eudract_number: str) -> Optional[EuTrialDrug]:
+        """
+        Extract drug fields from a specific table/section.
+        Returns None if no relevant data found (false positive table).
+        """
+        drug_name = self._extract_field(soup, "Trade name")
+        if not drug_name:
+            drug_name = self._extract_field(soup, "Product Name")
+
+        active_ingredient = self._extract_field(soup, "Name of Active Substance")
+        if not active_ingredient:
+            active_ingredient = self._extract_field(soup, "Active Substance")
+
+        pharm_form = self._extract_field(soup, "Pharmaceutical form")
+
+        cas_number = self._extract_field(soup, "CAS Number")
+
+        # If we found nothing relevant, it's likely a false positive table (e.g. a summary)
+        if not any([drug_name, active_ingredient, pharm_form, cas_number]):
+            return None
+
+        return EuTrialDrug(
+            eudract_number=eudract_number,
+            drug_name=drug_name,
+            active_ingredient=active_ingredient,
+            cas_number=cas_number,
+            pharmaceutical_form=pharm_form,
+        )
+
+    def _extract_field(self, soup: Union[BeautifulSoup, Tag], label_text: str) -> Optional[str]:
         """
         Helper to find a field by its label.
         Handles the messy table structure of EU CTR.
