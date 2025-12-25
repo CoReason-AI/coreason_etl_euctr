@@ -30,9 +30,7 @@ class Crawler:
         Args:
             client: Optional httpx.Client instance. If not provided, a default one will be created.
         """
-        self.client = client or httpx.Client(
-            headers={"User-Agent": "Coreason-ETL-Crawler/1.0"}, follow_redirects=True
-        )
+        self.client = client or httpx.Client(headers={"User-Agent": "Coreason-ETL-Crawler/1.0"}, follow_redirects=True)
 
     def fetch_search_page(self, page_num: int = 1, query: str = "") -> str:
         """
@@ -109,7 +107,7 @@ class Crawler:
                 next_node = next_node.next_sibling
 
             if next_node:
-                val = next_node.get_text(strip=True) if hasattr(next_node, 'get_text') else str(next_node).strip()
+                val = next_node.get_text(strip=True) if hasattr(next_node, "get_text") else str(next_node).strip()
                 if val:
                     ids.append(val.split()[0])
 

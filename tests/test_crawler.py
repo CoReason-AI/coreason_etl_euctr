@@ -166,7 +166,7 @@ def test_extract_ids_unicode_handling() -> None:
     # Uses non-breaking space \u00A0
     html = """
     <div>
-        <span>EudraCT Number:</span>\u00A0\u00A0<span>2004-001234-56</span>
+        <span>EudraCT Number:</span>\u00a0\u00a0<span>2004-001234-56</span>
     </div>
     """
     crawler = Crawler()
