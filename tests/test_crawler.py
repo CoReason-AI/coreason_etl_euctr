@@ -131,20 +131,44 @@ def test_extract_ids_deduplication() -> None:
 
 
 def test_extract_ids_orphaned_label() -> None:
-    """Test coverage for case where label has no parent (unlikely but possible with fragments)."""
-    # Create a disconnected string element just for logic reference in the test,
-    # though we use mocks below.
+    """Test coverage for case where label has no parent."""
     _ = NavigableString("EudraCT Number:")
 
     crawler = Crawler()
-    # Mock soup.find_all to return a label with no parent
     with patch("coreason_etl_euctr.crawler.BeautifulSoup") as MockSoup:
         mock_soup_instance = MagicMock()
         MockSoup.return_value = mock_soup_instance
 
         mock_label = MagicMock()
-        mock_label.parent = None  # Trigger the continue
+        mock_label.parent = None
         mock_soup_instance.find_all.return_value = [mock_label]
 
         ids = crawler.extract_ids("<html></html>")
         assert ids == []
+
+
+def test_extract_ids_comment_ignored() -> None:
+    """Test that HTML comments containing the label are ignored."""
+    html = """
+    <div>
+        <!-- EudraCT Number: 9999-999999-99 -->
+        <span>Real ID</span>
+    </div>
+    """
+    crawler = Crawler()
+    ids = crawler.extract_ids(html)
+    # Should NOT find the ID in the comment
+    assert ids == []
+
+
+def test_extract_ids_unicode_handling() -> None:
+    """Test handling of unicode spaces and characters."""
+    # Uses non-breaking space \u00A0
+    html = """
+    <div>
+        <span>EudraCT Number:</span>\u00A0\u00A0<span>2004-001234-56</span>
+    </div>
+    """
+    crawler = Crawler()
+    ids = crawler.extract_ids(html)
+    assert ids == ["2004-001234-56"]

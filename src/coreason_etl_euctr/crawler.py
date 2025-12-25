@@ -12,7 +12,7 @@ import time
 from typing import List, Optional, cast
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from loguru import logger
 
 
@@ -79,6 +79,10 @@ class Crawler:
         labels = soup.find_all(string=lambda text: "EudraCT Number:" in text if text else False)
 
         for label in labels:
+            # Ignore comments
+            if isinstance(label, Comment):
+                continue
+
             parent = label.parent
             if not parent:
                 continue
