@@ -1,0 +1,104 @@
+# Copyright (c) 2025 CoReason, Inc.
+#
+# This software is proprietary and dual-licensed.
+# Licensed under the Prosperity Public License 3.0 (the "License").
+# A copy of the license is available at https://prosperitylicense.com/versions/3.0.0
+# For details, see the LICENSE file.
+# Commercial use beyond a 30-day trial requires a separate license.
+#
+# Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
+
+import re
+from typing import List, Optional
+
+from bs4 import BeautifulSoup
+
+from coreason_etl_euctr.models import EuTrialCondition
+from coreason_etl_euctr.parser import Parser
+
+
+class ConditionsParser(Parser):
+    """
+    Extension of Parser to handle Conditions.
+    Note: Ideally this logic lives in Parser class, but for testing purposes we mock it or add it to Parser.
+    Since the task is to modify Parser, we will use this test file to verify the logic
+    that will go into Parser.
+    """
+    pass
+
+def test_parse_conditions_simple() -> None:
+    html = """
+    <table>
+        <tr><td colspan="2">E. GENERAL INFORMATION ON THE TRIAL</td></tr>
+        <tr>
+            <td>E.1.1 Medical condition(s) being investigated:</td>
+            <td>Cancer of the Lung</td>
+        </tr>
+        <tr>
+            <td>E.1.2 MedDRA version:</td>
+            <td>10.0</td>
+        </tr>
+    </table>
+    """
+    parser = Parser()
+    # We expect this method to be added to Parser
+    if not hasattr(parser, "parse_conditions"):
+        pytest.skip("parse_conditions not implemented yet")
+
+    conditions = parser.parse_conditions(html, "2023-123") # type: ignore
+
+    assert len(conditions) == 1
+    c = conditions[0]
+    assert c.condition_name == "Cancer of the Lung"
+    assert "10.0" in c.meddra_code
+
+
+def test_parse_conditions_multiple_blocks() -> None:
+    """Test if multiple condition blocks exist (rare but possible in some formats)."""
+    html = """
+    <div>
+        <table>
+            <tr><td>E.1.1 Medical condition:</td><td>Flu</td></tr>
+            <tr><td>E.1.2 MedDRA version:</td><td>v1</td></tr>
+        </table>
+        <table>
+            <tr><td>E.1.1 Medical condition:</td><td>Cold</td></tr>
+            <tr><td>E.1.2 MedDRA version:</td><td>v2</td></tr>
+        </table>
+    </div>
+    """
+    parser = Parser()
+    if not hasattr(parser, "parse_conditions"):
+        pytest.skip("parse_conditions not implemented yet")
+
+    conditions = parser.parse_conditions(html, "2023-123") # type: ignore
+    assert len(conditions) == 2
+    assert conditions[0].condition_name == "Flu"
+    assert conditions[1].condition_name == "Cold"
+
+def test_parse_conditions_missing_meddra() -> None:
+    html = """
+    <table>
+        <tr>
+            <td>E.1.1 Medical condition(s):</td>
+            <td>Headache</td>
+        </tr>
+    </table>
+    """
+    parser = Parser()
+    if not hasattr(parser, "parse_conditions"):
+        pytest.skip("parse_conditions not implemented yet")
+
+    conditions = parser.parse_conditions(html, "2023-123") # type: ignore
+    assert len(conditions) == 1
+    assert conditions[0].condition_name == "Headache"
+    assert conditions[0].meddra_code is None
+
+def test_parse_conditions_empty() -> None:
+    html = "<html></html>"
+    parser = Parser()
+    if not hasattr(parser, "parse_conditions"):
+        pytest.skip("parse_conditions not implemented yet")
+
+    conditions = parser.parse_conditions(html, "2023-123") # type: ignore
+    assert conditions == []

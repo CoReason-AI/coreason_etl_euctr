@@ -14,7 +14,7 @@ from typing import List, Optional, Union
 
 from bs4 import BeautifulSoup, Tag
 
-from coreason_etl_euctr.models import EuTrial, EuTrialDrug
+from coreason_etl_euctr.models import EuTrial, EuTrialDrug, EuTrialCondition
 from coreason_etl_euctr.utils import extract_field_by_label, parse_flexible_date
 
 
@@ -107,6 +107,71 @@ class Parser:
                 drugs.append(drug)
 
         return drugs
+
+    def parse_conditions(self, html_content: str, eudract_number: str) -> List[EuTrialCondition]:
+        """
+        Parse Section E to extract conditions.
+
+        Args:
+            html_content: The raw HTML string.
+            eudract_number: The trial ID.
+
+        Returns:
+            List[EuTrialCondition]: A list of extracted conditions.
+        """
+        soup = BeautifulSoup(html_content, "html.parser")
+        conditions: List[EuTrialCondition] = []
+
+        # Target labels for Section E
+        # E.1.1 Medical condition(s) being investigated
+        # We can search for "Medical condition" to locate the table(s).
+        target_labels = ["Medical condition", "MedDRA version", "MedDRA level"]
+        pattern = re.compile(r"(" + "|".join([re.escape(label) for label in target_labels]) + r")", re.IGNORECASE)
+
+        markers = soup.find_all(string=pattern)
+        candidate_tables = []
+        seen_ids = set()
+
+        for marker in markers:
+            parent_table = marker.find_parent("table")
+            if parent_table and id(parent_table) not in seen_ids:
+                candidate_tables.append(parent_table)
+                seen_ids.add(id(parent_table))
+
+        for tbl in candidate_tables:
+            cond = self._parse_single_condition(tbl, eudract_number)
+            if cond:
+                conditions.append(cond)
+
+        return conditions
+
+    def _parse_single_condition(self, soup: Union[BeautifulSoup, Tag], eudract_number: str) -> Optional[EuTrialCondition]:
+        """Extract condition fields from a table."""
+        condition_name = extract_field_by_label(soup, "Medical condition")
+        if not condition_name:
+            # Try strict match or other variations if needed
+            condition_name = extract_field_by_label(soup, "Medical condition(s) being investigated")
+
+        meddra_version = extract_field_by_label(soup, "MedDRA version")
+        meddra_level = extract_field_by_label(soup, "MedDRA level")
+
+        # Combine MedDRA info if both exist, or pick one
+        meddra_code = None
+        if meddra_version and meddra_level:
+            meddra_code = f"{meddra_version} / {meddra_level}"
+        elif meddra_version:
+            meddra_code = meddra_version
+        elif meddra_level:
+            meddra_code = meddra_level
+
+        if not condition_name and not meddra_code:
+            return None
+
+        return EuTrialCondition(
+            eudract_number=eudract_number,
+            condition_name=condition_name,
+            meddra_code=meddra_code
+        )
 
     def _parse_single_drug(self, soup: Union[BeautifulSoup, Tag], eudract_number: str) -> Optional[EuTrialDrug]:
         """
