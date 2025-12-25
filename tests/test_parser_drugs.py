@@ -168,3 +168,18 @@ def test_parse_drugs_product_name_alias() -> None:
     drugs = parser.parse_drugs(html, "2023-123")
     assert len(drugs) == 1
     assert drugs[0].drug_name == "My Product"
+
+def test_parse_drugs_active_substance_alias() -> None:
+    """Test finding 'Active Substance' when 'Name of Active Substance' is absent."""
+    html = """
+    <table>
+        <tr>
+            <td>Active Substance:</td>
+            <td>Substance X</td>
+        </tr>
+    </table>
+    """
+    parser = Parser()
+    drugs = parser.parse_drugs(html, "2023-123")
+    assert len(drugs) == 1
+    assert drugs[0].active_ingredient == "Substance X"

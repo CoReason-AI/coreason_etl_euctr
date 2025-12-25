@@ -79,3 +79,67 @@ def test_parse_conditions_empty() -> None:
     parser = Parser()
     conditions = parser.parse_conditions(html, "2023-123")
     assert conditions == []
+
+def test_parse_conditions_fallback_labels() -> None:
+    """Test fallback to 'Medical condition(s) being investigated' if 'Medical condition' is missing."""
+    html = """
+    <table>
+        <tr>
+            <td>E.1.1 Medical condition(s) being investigated:</td>
+            <td>Rare Disease</td>
+        </tr>
+    </table>
+    """
+    parser = Parser()
+    conditions = parser.parse_conditions(html, "2023-123")
+    assert len(conditions) == 1
+    assert conditions[0].condition_name == "Rare Disease"
+
+def test_parse_conditions_only_meddra_version() -> None:
+    """Test extraction with only MedDRA version."""
+    html = """
+    <table>
+        <tr>
+            <td>E.1.2 MedDRA version:</td>
+            <td>11.0</td>
+        </tr>
+    </table>
+    """
+    parser = Parser()
+    conditions = parser.parse_conditions(html, "2023-123")
+    assert len(conditions) == 1
+    assert conditions[0].meddra_code == "11.0"
+
+def test_parse_conditions_only_meddra_level() -> None:
+    """Test extraction with only MedDRA level."""
+    html = """
+    <table>
+        <tr>
+            <td>E.1.2 MedDRA level:</td>
+            <td>PT</td>
+        </tr>
+    </table>
+    """
+    parser = Parser()
+    conditions = parser.parse_conditions(html, "2023-123")
+    assert len(conditions) == 1
+    assert conditions[0].meddra_code == "PT"
+
+def test_parse_conditions_meddra_combined() -> None:
+    """Test extraction with both MedDRA version and level."""
+    html = """
+    <table>
+        <tr>
+            <td>MedDRA version:</td>
+            <td>12.0</td>
+        </tr>
+        <tr>
+            <td>MedDRA level:</td>
+            <td>LLT</td>
+        </tr>
+    </table>
+    """
+    parser = Parser()
+    conditions = parser.parse_conditions(html, "2023-123")
+    assert len(conditions) == 1
+    assert conditions[0].meddra_code == "12.0 / LLT"
