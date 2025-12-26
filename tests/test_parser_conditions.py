@@ -147,3 +147,21 @@ def test_parse_conditions_meddra_combined() -> None:
     conditions = parser.parse_conditions(html, "2023-123")
     assert len(conditions) == 1
     assert conditions[0].meddra_code == "12.0 / LLT"
+
+
+def test_parse_conditions_false_positive() -> None:
+    """
+    Test a table that matches condition labels but has no values.
+    This triggers the 'if not condition_name and not meddra_code: return None' path.
+    """
+    html = """
+    <table>
+        <tr>
+            <td>Medical condition:</td>
+            <td></td>
+        </tr>
+    </table>
+    """
+    parser = Parser()
+    conditions = parser.parse_conditions(html, "2023-123")
+    assert len(conditions) == 0
