@@ -248,3 +248,46 @@ def test_upsert_stream_not_connected() -> None:
     data = io.StringIO("data")
     with pytest.raises(RuntimeError):
         loader.upsert_stream(data, "table", conflict_keys=["id"])
+
+
+def test_upsert_stream_only_pks(mock_psycopg_connect: MagicMock) -> None:
+    """Test upsert when only PKs exist (DO NOTHING)."""
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    mock_psycopg_connect.return_value = mock_conn
+
+    # Mock description to return only PK column
+    Column = MagicMock()
+    Column.name = "id"
+    mock_cursor.description = [Column]
+
+    loader = PostgresLoader()
+    loader.connect()
+
+    data = io.StringIO("id\n1")
+    loader.upsert_stream(data, "test_table", conflict_keys=["id"])
+
+    calls = mock_cursor.execute.call_args_list
+    # Check Insert
+    insert_call = next((call for call in calls if "INSERT INTO test_table" in call[0][0]), None)
+    assert insert_call is not None
+    sql = insert_call[0][0]
+    assert "ON CONFLICT (id) DO NOTHING" in sql
+
+
+def test_upsert_stream_failure(mock_psycopg_connect: MagicMock) -> None:
+    """Test upsert stream failure (exception handling)."""
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    # Fail on create temp table
+    mock_cursor.execute.side_effect = psycopg.Error("Upsert error")
+    mock_psycopg_connect.return_value = mock_conn
+
+    loader = PostgresLoader()
+    loader.connect()
+    data = io.StringIO("id,val\n1,a")
+
+    with pytest.raises(psycopg.Error, match="Upsert error"):
+        loader.upsert_stream(data, "test_table", conflict_keys=["id"])
