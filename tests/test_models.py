@@ -43,7 +43,7 @@ def test_eu_trial_missing_required() -> None:
 
 def test_eu_trial_defaults() -> None:
     """Test default values for EuTrial."""
-    trial = EuTrial(eudract_number="123", url_source="http://test.com")  # type: ignore[call-arg]
+    trial = EuTrial(eudract_number="123", url_source="http://test.com")
     assert trial.sponsor_name is None
     assert trial.start_date is None
     assert isinstance(trial.last_updated, datetime)
@@ -93,7 +93,7 @@ def test_eu_trial_date_coercion() -> None:
     trial = EuTrial(
         eudract_number="123",
         url_source="http://test.com",
-        start_date="2023-01-01",  # type: ignore[arg-type, call-arg]
+        start_date="2023-01-01",  # type: ignore[arg-type]
     )
     assert trial.start_date == date(2023, 1, 1)
 
@@ -104,7 +104,7 @@ def test_eu_trial_invalid_date() -> None:
         EuTrial(
             eudract_number="123",
             url_source="http://test.com",
-            start_date="not-a-date",  # type: ignore[arg-type, call-arg]
+            start_date="not-a-date",  # type: ignore[arg-type]
         )
     assert "start_date" in str(excinfo.value)
 
@@ -113,7 +113,7 @@ def test_eu_trial_type_coercion_failure() -> None:
     """Test that int to str coercion does not happen by default in Pydantic V2."""
     with pytest.raises(ValidationError) as excinfo:
         EuTrial(
-            eudract_number=12345,  # type: ignore[arg-type, call-arg]
+            eudract_number=12345,  # type: ignore[arg-type]
             url_source="http://test.com",
         )
     assert "eudract_number" in str(excinfo.value)
@@ -126,7 +126,7 @@ def test_eu_trial_unicode_handling() -> None:
     trial = EuTrial(
         eudract_number="123",
         url_source="http://test.com",
-        sponsor_name=unicode_str,  # type: ignore[call-arg]
+        sponsor_name=unicode_str,
     )
     assert trial.sponsor_name == unicode_str
 
@@ -154,7 +154,7 @@ def test_eu_trial_empty_strings_vs_none() -> None:
     trial_none = EuTrial(
         eudract_number="1",
         url_source="http://t.com",
-        trial_title=None,  # type: ignore[call-arg]
+        trial_title=None,
     )
     assert trial_none.trial_title is None
 
@@ -162,7 +162,7 @@ def test_eu_trial_empty_strings_vs_none() -> None:
     trial_empty = EuTrial(
         eudract_number="2",
         url_source="http://t.com",
-        trial_title="",  # type: ignore[call-arg]
+        trial_title="",
     )
     assert trial_empty.trial_title == ""
 
@@ -173,7 +173,7 @@ def test_eu_trial_serialization() -> None:
         eudract_number="2023-123",
         url_source="http://example.com",
         start_date=date(2023, 10, 25),
-        trial_status="Ongoing",  # type: ignore[call-arg]
+        trial_status="Ongoing",
     )
     json_output = trial.model_dump_json()
     data = json.loads(json_output)
@@ -190,7 +190,7 @@ def test_eu_trial_explicit_none_for_required() -> None:
     """Test validation error when passing explicit None to a required field."""
     with pytest.raises(ValidationError) as excinfo:
         EuTrial(
-            eudract_number=None,  # type: ignore[arg-type, call-arg]
+            eudract_number=None,  # type: ignore[arg-type]
             url_source="http://test.com",
         )
     assert "eudract_number" in str(excinfo.value)
@@ -202,7 +202,7 @@ def test_eu_trial_whitespace_preservation() -> None:
     trial = EuTrial(
         eudract_number="  123  ",
         url_source="http://test.com",
-        sponsor_name="  Acme Corp  ",  # type: ignore[call-arg]
+        sponsor_name="  Acme Corp  ",
     )
     assert trial.eudract_number == "  123  "
     assert trial.sponsor_name == "  Acme Corp  "
@@ -214,7 +214,7 @@ def test_eu_trial_very_long_strings() -> None:
     trial = EuTrial(
         eudract_number="123",
         url_source="http://test.com",
-        trial_title=long_title,  # type: ignore[call-arg]
+        trial_title=long_title,
     )
-    assert len(trial.trial_title) == 10_000  # type: ignore
+    assert len(trial.trial_title) == 10_000  # type: ignore[arg-type]
     assert trial.trial_title == long_title
