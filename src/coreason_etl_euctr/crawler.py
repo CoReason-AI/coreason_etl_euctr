@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import time
-from typing import List, Optional, cast
+from typing import List, Optional
 
 import httpx
 from bs4 import BeautifulSoup, Comment
@@ -46,7 +46,7 @@ class Crawler:
         Raises:
             httpx.HTTPStatusError: If the request fails.
         """
-        params = {"query": query, "page": page_num}
+        params = {"query": query, "page": str(page_num)}
 
         # Politeness: implementation of R.3.4.1
         time.sleep(1)
@@ -55,7 +55,7 @@ class Crawler:
             logger.debug(f"Fetching search page {page_num}...")
             response = self.client.get(self.BASE_URL, params=params)
             response.raise_for_status()
-            return cast(str, response.text)
+            return str(response.text)
         except httpx.HTTPError as e:
             logger.error(f"Failed to fetch page {page_num}: {e}")
             raise

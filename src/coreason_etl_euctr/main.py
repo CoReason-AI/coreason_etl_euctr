@@ -8,15 +8,217 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+import io
 import os
 import sys
+from pathlib import Path
+from typing import Iterator, List, Optional, Sequence
 
 from loguru import logger
+from pydantic import BaseModel
+
+from coreason_etl_euctr.crawler import Crawler
+from coreason_etl_euctr.downloader import Downloader
+from coreason_etl_euctr.loader import BaseLoader
+from coreason_etl_euctr.parser import Parser
+from coreason_etl_euctr.pipeline import Pipeline
+from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 logger.remove()
 logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"))
 
 
+def run_bronze(
+    output_dir: str = "data/bronze",
+    start_page: int = 1,
+    max_pages: int = 1,
+    crawler: Optional[Crawler] = None,
+    downloader: Optional[Downloader] = None,
+) -> None:
+    """
+    Execute the Bronze Layer workflow: Crawl -> Deduplicate -> Download.
+
+    Args:
+        output_dir: Directory to save HTML files.
+        start_page: Page number to start crawling.
+        max_pages: Number of pages to crawl.
+        crawler: Optional injected Crawler instance.
+        downloader: Optional injected Downloader instance.
+    """
+    crawler = crawler or Crawler()
+    downloader = downloader or Downloader(output_dir=Path(output_dir))
+
+    all_ids: List[str] = []
+
+    # Step 1: Crawl
+    for i in range(start_page, start_page + max_pages):
+        try:
+            logger.info(f"Crawling page {i}...")
+            html = crawler.fetch_search_page(page_num=i)
+            ids = crawler.extract_ids(html)
+            all_ids.extend(ids)
+        except Exception as e:
+            logger.error(f"Failed to crawl page {i}: {e}")
+            continue
+
+    # Step 2: Deduplicate
+    unique_ids = list(dict.fromkeys(all_ids))
+    logger.info(f"Found {len(unique_ids)} unique trials to download.")
+
+    # Step 3: Download
+    success_count = 0
+    for trial_id in unique_ids:
+        try:
+            if downloader.download_trial(trial_id):
+                success_count += 1
+        except Exception as e:
+            logger.error(f"Failed to download {trial_id}: {e}")
+
+    logger.info(f"Bronze run complete. Downloaded {success_count}/{len(unique_ids)} trials.")
+
+
+def run_silver(
+    input_dir: str = "data/bronze",
+    parser: Optional[Parser] = None,
+    pipeline: Optional[Pipeline] = None,
+    loader: Optional[BaseLoader] = None,
+) -> None:
+    """
+    Execute the Silver Layer workflow: Parse -> Stage -> Load.
+
+    Args:
+        input_dir: Directory containing raw HTML files.
+        parser: Optional Parser instance.
+        pipeline: Optional Pipeline instance.
+        loader: Optional Loader instance.
+    """
+    parser = parser or Parser()
+    pipeline = pipeline or Pipeline()
+    loader = loader or PostgresLoader()
+
+    input_path = Path(input_dir)
+    if not input_path.exists():
+        logger.error(f"Input directory {input_dir} does not exist.")
+        return
+
+    # We need to process separate streams for each target table
+    # Since Pipeline consumes an iterator, we need to generate separate iterators or lists.
+    # For simplicity and to match the 'bulk_load_stream' interface, we will:
+    # 1. Collect all valid parsed models into temporary lists (or use tee, but lists are safer for now if fit in mem).
+    #    However, to be truly streaming, we should probably do 3 passes or use a generator that yields different types.
+    #    But 'bulk_load_stream' takes one stream at a time.
+    #    Let's parse once and split into buckets.
+
+    # NOTE: In a massive scale scenario, we would write to temp files on disk.
+    # For this iteration, we'll accumulate in memory as per current architectural scope.
+
+    trials = []
+    drugs = []
+    conditions = []
+
+    files = list(input_path.glob("*.html"))
+    logger.info(f"Found {len(files)} HTML files to process.")
+
+    for file_path in files:
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            # Extract ID from filename? Or parse it? Spec says filename is ID.
+            trial_id = file_path.stem
+
+            # Parse Trial
+            # We assume the file contains the source URL or we reconstruct it.
+            # R.4.2.3 says metadata preserved. If we injected meta tag, we could read it.
+            # For now, we'll placeholder source.
+            url_source = f"file://{file_path.name}"
+
+            try:
+                trial = parser.parse_trial(content, url_source=url_source)
+                # Ensure ID matches filename just in case
+                if trial.eudract_number != trial_id:
+                    logger.warning(f"Filename {trial_id} mismatch with content {trial.eudract_number}")
+                trials.append(trial)
+            except ValueError as e:
+                logger.warning(f"Failed to parse trial from {file_path}: {e}")
+                continue
+
+            # Parse Drugs
+            trial_drugs = parser.parse_drugs(content, trial_id)
+            drugs.extend(trial_drugs)
+
+            # Parse Conditions
+            trial_conds = parser.parse_conditions(content, trial_id)
+            conditions.extend(trial_conds)
+
+        except Exception as e:
+            logger.error(f"Error processing file {file_path}: {e}")
+            continue
+
+    if not trials:
+        logger.warning("No valid data parsed. Skipping load.")
+        return
+
+    # Load to DB
+    try:
+        loader.connect()
+        loader.prepare_schema()
+
+        # Load Trials
+        logger.info(f"Loading {len(trials)} trials...")
+        # We need to bridge the generator from Pipeline to the IO stream expected by Loader.
+        # Pipeline.stage_data yields strings (chunks).
+        # We need a file-like object that reads from this generator.
+
+        _load_table(loader, pipeline, trials, "eu_trials")
+        _load_table(loader, pipeline, drugs, "eu_trial_drugs")
+        _load_table(loader, pipeline, conditions, "eu_trial_conditions")
+
+        loader.commit()
+        logger.info("Silver run complete.")
+
+    except Exception as e:
+        logger.error(f"Database load failed: {e}")
+        if loader:
+            loader.rollback()
+    finally:
+        if loader:
+            loader.close()
+
+
+class StringIteratorIO(io.TextIOBase):
+    """
+    Helper to adapt a generator of strings into a file-like object for copy().
+    """
+
+    def __init__(self, iterator: Iterator[str]):
+        self._iterator = iterator
+        self._buffer = ""
+
+    def read(self, size: int | None = -1) -> str:
+        # If we have buffer, return it
+        if self._buffer:
+            ret = self._buffer
+            self._buffer = ""
+            return ret
+
+        # Otherwise fetch next chunk
+        try:
+            return next(self._iterator)
+        except StopIteration:
+            return ""
+
+
+def _load_table(loader: BaseLoader, pipeline: Pipeline, data: Sequence[BaseModel], table_name: str) -> None:
+    if not data:
+        return
+
+    gen = pipeline.stage_data(data)
+    stream = StringIteratorIO(gen)
+    # The BaseLoader interface expects IO[str], and StringIteratorIO is a TextIOBase which is IO[str].
+    # However, mypy is strict. Explicitly typing stream helps.
+    loader.bulk_load_stream(stream, table_name)  # type: ignore[arg-type]
+
+
 def hello_world() -> str:
+    # Kept for backward compatibility with existing tests until removed
     logger.info("Hello World!")
     return "Hello World!"
