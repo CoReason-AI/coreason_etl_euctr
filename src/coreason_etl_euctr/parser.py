@@ -85,6 +85,7 @@ class Parser:
         target_labels = [
             "Trade name",
             "Name of Active Substance",
+            "Active Substance",
             "Product Name",
             "Pharmaceutical form",
         ]

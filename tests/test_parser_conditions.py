@@ -80,6 +80,7 @@ def test_parse_conditions_empty() -> None:
     conditions = parser.parse_conditions(html, "2023-123")
     assert conditions == []
 
+
 def test_parse_conditions_fallback_labels() -> None:
     """Test fallback to 'Medical condition(s) being investigated' if 'Medical condition' is missing."""
     html = """
@@ -94,6 +95,7 @@ def test_parse_conditions_fallback_labels() -> None:
     conditions = parser.parse_conditions(html, "2023-123")
     assert len(conditions) == 1
     assert conditions[0].condition_name == "Rare Disease"
+
 
 def test_parse_conditions_only_meddra_version() -> None:
     """Test extraction with only MedDRA version."""
@@ -110,6 +112,7 @@ def test_parse_conditions_only_meddra_version() -> None:
     assert len(conditions) == 1
     assert conditions[0].meddra_code == "11.0"
 
+
 def test_parse_conditions_only_meddra_level() -> None:
     """Test extraction with only MedDRA level."""
     html = """
@@ -124,6 +127,7 @@ def test_parse_conditions_only_meddra_level() -> None:
     conditions = parser.parse_conditions(html, "2023-123")
     assert len(conditions) == 1
     assert conditions[0].meddra_code == "PT"
+
 
 def test_parse_conditions_meddra_combined() -> None:
     """Test extraction with both MedDRA version and level."""

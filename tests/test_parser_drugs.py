@@ -169,6 +169,7 @@ def test_parse_drugs_product_name_alias() -> None:
     assert len(drugs) == 1
     assert drugs[0].drug_name == "My Product"
 
+
 def test_parse_drugs_active_substance_alias() -> None:
     """Test finding 'Active Substance' when 'Name of Active Substance' is absent."""
     html = """
