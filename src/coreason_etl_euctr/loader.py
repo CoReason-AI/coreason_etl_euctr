@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from abc import ABC, abstractmethod
-from typing import IO
+from typing import IO, List
 
 
 class BaseLoader(ABC):
@@ -49,6 +49,20 @@ class BaseLoader(ABC):
         Args:
             data_stream: A file-like object containing CSV data.
             target_table: The name of the table to load data into.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    def upsert_stream(self, data_stream: IO[str], target_table: str, conflict_keys: List[str]) -> None:
+        """
+        Execute an upsert (merge) operation from a CSV data stream.
+        This typically involves loading to a temporary staging table and then
+        performing an INSERT ... ON CONFLICT ... UPDATE into the target table.
+
+        Args:
+            data_stream: A file-like object containing CSV data.
+            target_table: The name of the target table.
+            conflict_keys: List of column names to use for conflict resolution (Primary Key).
         """
         pass  # pragma: no cover
 

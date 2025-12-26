@@ -49,6 +49,9 @@ def test_valid_concrete_implementation() -> None:
         def bulk_load_stream(self, data_stream: IO[str], target_table: str) -> None:
             pass
 
+        def upsert_stream(self, data_stream: IO[str], target_table: str, conflict_keys: list[str]) -> None:
+            pass
+
         def commit(self) -> None:
             pass
 
