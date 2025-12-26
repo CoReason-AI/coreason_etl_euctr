@@ -8,7 +8,9 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-from typing import IO, Any, Optional
+import random
+import string
+from typing import IO, Any, List, Optional
 
 import psycopg
 from loguru import logger
@@ -120,6 +122,86 @@ class PostgresLoader(BaseLoader):
             logger.info(f"Bulk loaded data into {target_table}.")
         except psycopg.Error as e:
             logger.error(f"Bulk load failed for {target_table}: {e}")
+            raise
+
+    def upsert_stream(self, data_stream: IO[str], target_table: str, conflict_keys: List[str]) -> None:
+        """
+        Execute UPSERT via staging table.
+        1. Create temp table (structure copied from target).
+        2. COPY data to temp table.
+        3. INSERT ... ON CONFLICT DO UPDATE from temp table to target.
+        """
+        if not self.conn:
+            raise RuntimeError("Database not connected.")
+
+        if not conflict_keys:
+            raise ValueError("Conflict keys required for upsert.")
+
+        # Generate a unique temp table name to avoid collisions in concurrent sessions (though usually session local)
+        # Using a random suffix just to be safe if multiple calls happen in same session/transaction context if not dropped.
+        suffix = "".join(random.choices(string.ascii_lowercase, k=6))
+        temp_table = f"{target_table}_staging_{suffix}"
+
+        try:
+            with self.conn.cursor() as cur:
+                # 1. Create Temp Table (Structure only)
+                # "CREATE TEMP TABLE ... LIKE ... INCLUDING ALL" copies structure.
+                # However, Postgres temp tables are session-local.
+                logger.debug(f"Creating temp table {temp_table}...")
+                cur.execute(f"CREATE TEMP TABLE {temp_table} (LIKE {target_table} INCLUDING ALL) ON COMMIT DROP")
+
+                # 2. Bulk Load to Temp Table
+                sql_copy = f"COPY {temp_table} FROM STDIN WITH (FORMAT CSV, HEADER)"
+                with cur.copy(sql_copy) as copy:
+                    while data := data_stream.read(8192):
+                        copy.write(data)
+
+                # 3. Perform Upsert
+                # Retrieve column names to construct the UPDATE clause
+                # We query information_schema or just select * from temp limit 0 to get description?
+                # Faster: use the cursor description from a dummy select or query system catalogs.
+                # Let's query columns from the temp table (since it exists now).
+                cur.execute(f"SELECT * FROM {temp_table} LIMIT 0")
+                if not cur.description:
+                    logger.warning(f"No columns found in {temp_table}, skipping upsert.")
+                    return
+
+                columns = [desc.name for desc in cur.description]
+                cols_str = ", ".join(columns)
+
+                # Build SET clause: "col = EXCLUDED.col" for all non-key columns
+                # We exclude conflict keys from the update set usually, or update them too (idempotent).
+                update_assignments = [f"{col} = EXCLUDED.{col}" for col in columns if col not in conflict_keys]
+
+                # If there are no columns to update (e.g. table only has PKs?), we do NOTHING?
+                # But requirement says "ON CONFLICT UPDATE".
+                # If update_assignments is empty (only PKs), we might want DO NOTHING.
+                # But assume there are other columns.
+
+                conflict_target = ", ".join(conflict_keys)
+
+                if update_assignments:
+                    update_clause = f"UPDATE SET {', '.join(update_assignments)}"
+                    action = update_clause
+                else:
+                    action = "NOTHING"
+
+                insert_sql = (
+                    f"INSERT INTO {target_table} ({cols_str}) "
+                    f"SELECT {cols_str} FROM {temp_table} "
+                    f"ON CONFLICT ({conflict_target}) DO {action}"
+                )
+
+                logger.debug(f"Executing Upsert on {target_table}...")
+                cur.execute(insert_sql)
+
+                # Temp table is ON COMMIT DROP, but we can drop it explicitly to save resources if transaction is long
+                cur.execute(f"DROP TABLE IF EXISTS {temp_table}")
+
+            logger.info(f"Upsert complete for {target_table}.")
+
+        except psycopg.Error as e:
+            logger.error(f"Upsert failed for {target_table}: {e}")
             raise
 
     def commit(self) -> None:

@@ -154,3 +154,97 @@ def test_commit_rollback_safe(mock_psycopg_connect: MagicMock) -> None:
 
     loader.rollback()
     mock_conn.rollback.assert_called_once()
+
+
+def test_upsert_stream_success(mock_psycopg_connect: MagicMock) -> None:
+    """Test upsert stream executes correct sequence of SQL."""
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_copy = MagicMock()
+
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    mock_cursor.copy.return_value.__enter__.return_value = mock_copy
+    mock_psycopg_connect.return_value = mock_conn
+
+    # Mock description to return columns
+    Column = MagicMock()
+    Column.name = "id"
+    Column2 = MagicMock()
+    Column2.name = "val"
+    mock_cursor.description = [Column, Column2]
+
+    loader = PostgresLoader()
+    loader.connect()
+
+    data = io.StringIO("id,val\n1,a")
+    loader.upsert_stream(data, "test_table", conflict_keys=["id"])
+
+    # Verify calls
+    # 1. Create Temp Table
+    # 2. Copy
+    # 3. Select (to get cols) - actually we check description after this call
+    # 4. Insert ... On Conflict ... Update
+    # 5. Drop Temp
+
+    calls = mock_cursor.execute.call_args_list
+    assert len(calls) >= 4  # Create, Select, Insert, Drop
+
+    # Check Create
+    assert "CREATE TEMP TABLE" in calls[0][0][0]
+    assert "test_table_staging_" in calls[0][0][0]
+
+    # Check Copy
+    mock_cursor.copy.assert_called_once()
+
+    # Check Select/Description access (implicit in code flow)
+
+    # Check Insert
+    # Find the call with INSERT
+    insert_call = next((call for call in calls if "INSERT INTO test_table" in call[0][0]), None)
+    assert insert_call is not None
+    sql = insert_call[0][0]
+    assert "ON CONFLICT (id) DO UPDATE SET" in sql
+    assert "val = EXCLUDED.val" in sql
+    assert "id = EXCLUDED.id" not in sql  # PK should not be in SET clause usually
+
+    # Check Drop
+    assert "DROP TABLE IF EXISTS" in calls[-1][0][0]
+
+
+def test_upsert_stream_no_columns(mock_psycopg_connect: MagicMock) -> None:
+    """Test upsert aborts if no columns found in temp table."""
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    mock_psycopg_connect.return_value = mock_conn
+
+    # Return None or empty description
+    mock_cursor.description = []
+
+    loader = PostgresLoader()
+    loader.connect()
+    data = io.StringIO("id,val\n1,a")
+
+    loader.upsert_stream(data, "test_table", conflict_keys=["id"])
+
+    # Should create temp, copy, then stop before insert
+    insert_calls = [call for call in mock_cursor.execute.call_args_list if "INSERT INTO" in call[0][0]]
+    assert len(insert_calls) == 0
+
+
+def test_upsert_stream_missing_conflict_keys() -> None:
+    """Test ValueError if conflict_keys missing."""
+    loader = PostgresLoader()
+    loader.conn = MagicMock() # fake connection
+    data = io.StringIO("data")
+
+    with pytest.raises(ValueError, match="Conflict keys required"):
+        loader.upsert_stream(data, "table", conflict_keys=[])
+
+
+def test_upsert_stream_not_connected() -> None:
+    """Test RuntimeError if not connected."""
+    loader = PostgresLoader()
+    data = io.StringIO("data")
+    with pytest.raises(RuntimeError):
+        loader.upsert_stream(data, "table", conflict_keys=["id"])
