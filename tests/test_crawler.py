@@ -17,7 +17,7 @@ from bs4 import NavigableString
 from coreason_etl_euctr.crawler import Crawler
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def mock_httpx_client() -> Generator[MagicMock, None, None]:
     with patch("httpx.Client") as mock:
         client_instance = MagicMock()
