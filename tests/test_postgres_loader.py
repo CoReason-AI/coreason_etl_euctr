@@ -17,7 +17,7 @@ import pytest
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def mock_psycopg_connect() -> Generator[MagicMock, None, None]:
     with patch("psycopg.connect") as mock:
         yield mock

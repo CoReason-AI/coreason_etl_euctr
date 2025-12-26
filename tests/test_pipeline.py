@@ -8,12 +8,9 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-from typing import List
-
-import pytest
-from pydantic import BaseModel
 
 from coreason_etl_euctr.pipeline import Pipeline
+from pydantic import BaseModel
 
 
 class MockModel(BaseModel):
@@ -92,6 +89,7 @@ def test_stage_data_multiple_chunks() -> None:
 
 def test_stage_data_handles_none_values() -> None:
     """Test handling of None/Empty fields."""
+
     class NullableModel(BaseModel):
         f1: str | None
         f2: int

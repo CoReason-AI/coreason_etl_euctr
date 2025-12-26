@@ -8,12 +8,11 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+from pathlib import Path
 from unittest.mock import MagicMock, call
 
-import pytest
+from coreason_etl_euctr.main import StringIteratorIO, hello_world, run_bronze, run_silver
 from pydantic import BaseModel
-
-from coreason_etl_euctr.main import hello_world, run_bronze, run_silver, StringIteratorIO
 
 
 def test_hello_world() -> None:
@@ -27,16 +26,10 @@ def test_run_bronze_flow() -> None:
 
     # Setup mocks
     mock_crawler.fetch_search_page.return_value = "<html>...</html>"
-    mock_crawler.extract_ids.side_effect = [["ID1", "ID2"], ["ID2", "ID3"]] # Simulate duplicates across pages
+    mock_crawler.extract_ids.side_effect = [["ID1", "ID2"], ["ID2", "ID3"]]  # Simulate duplicates across pages
     mock_downloader.download_trial.return_value = True
 
-    run_bronze(
-        output_dir="tmp",
-        start_page=1,
-        max_pages=2,
-        crawler=mock_crawler,
-        downloader=mock_downloader
-    )
+    run_bronze(output_dir="tmp", start_page=1, max_pages=2, crawler=mock_crawler, downloader=mock_downloader)
 
     # Verify Crawler calls
     assert mock_crawler.fetch_search_page.call_count == 2
@@ -44,9 +37,7 @@ def test_run_bronze_flow() -> None:
 
     # Verify Deduplication (ID1, ID2, ID3 = 3 unique)
     assert mock_downloader.download_trial.call_count == 3
-    mock_downloader.download_trial.assert_has_calls([
-        call("ID1"), call("ID2"), call("ID3")
-    ], any_order=True)
+    mock_downloader.download_trial.assert_has_calls([call("ID1"), call("ID2"), call("ID3")], any_order=True)
 
 
 def test_run_bronze_handles_crawl_exception() -> None:
@@ -77,10 +68,12 @@ def test_run_bronze_handles_download_exception() -> None:
 
     assert mock_downloader.download_trial.call_count == 2
 
+
 class MockTrial(BaseModel):
     eudract_number: str
 
-def test_run_silver_flow(tmp_path) -> None:
+
+def test_run_silver_flow(tmp_path: Path) -> None:
     """Test the parsing and loading flow of run_silver."""
     # Create dummy bronze files
     d = tmp_path / "bronze"
@@ -101,12 +94,7 @@ def test_run_silver_flow(tmp_path) -> None:
     # Setup Pipeline returns
     mock_pipeline.stage_data.return_value = iter(["header\n", "row1\n"])
 
-    run_silver(
-        input_dir=str(d),
-        parser=mock_parser,
-        pipeline=mock_pipeline,
-        loader=mock_loader
-    )
+    run_silver(input_dir=str(d), parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
 
     # Verify Parser calls
     mock_parser.parse_trial.assert_called()
@@ -120,11 +108,12 @@ def test_run_silver_flow(tmp_path) -> None:
     mock_loader.commit.assert_called_once()
     mock_loader.close.assert_called_once()
 
-def test_run_silver_id_mismatch(tmp_path) -> None:
+
+def test_run_silver_id_mismatch(tmp_path: Path) -> None:
     """Test warning when filename mismatch ID."""
     d = tmp_path / "bronze"
     d.mkdir()
-    p1 = d / "2015-999.html" # ID in filename is 2015-999
+    p1 = d / "2015-999.html"  # ID in filename is 2015-999
     p1.write_text("<html>Content</html>")
 
     mock_parser = MagicMock()
@@ -141,7 +130,8 @@ def test_run_silver_id_mismatch(tmp_path) -> None:
     # Logic should proceed but log warning.
     mock_loader.bulk_load_stream.assert_called()
 
-def test_run_silver_parse_exception(tmp_path) -> None:
+
+def test_run_silver_parse_exception(tmp_path: Path) -> None:
     """Test exception during generic processing of file (e.g. read error or other)."""
     # This covers the broad 'except Exception as e' loop in file processing
     d = tmp_path / "bronze"
@@ -160,6 +150,7 @@ def test_run_silver_parse_exception(tmp_path) -> None:
     # Should continue loop (skip file) and thus no trials loaded
     mock_loader.bulk_load_stream.assert_not_called()
 
+
 def test_run_silver_no_input_dir() -> None:
     """Test early exit if input dir missing."""
     mock_loader = MagicMock()
@@ -167,7 +158,7 @@ def test_run_silver_no_input_dir() -> None:
     mock_loader.connect.assert_not_called()
 
 
-def test_run_silver_no_valid_data(tmp_path) -> None:
+def test_run_silver_no_valid_data(tmp_path: Path) -> None:
     """Test skipping load if no valid data parsed."""
     d = tmp_path / "bronze"
     d.mkdir()
@@ -182,7 +173,8 @@ def test_run_silver_no_valid_data(tmp_path) -> None:
 
     mock_loader.connect.assert_not_called()
 
-def test_run_silver_db_error(tmp_path) -> None:
+
+def test_run_silver_db_error(tmp_path: Path) -> None:
     """Test rollback on DB error."""
     d = tmp_path / "bronze"
     d.mkdir()

@@ -8,11 +8,11 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-import os
 import io
+import os
 import sys
 from pathlib import Path
-from typing import IO, Any, Iterator, List, Optional
+from typing import Iterator, List, Optional, Sequence
 
 from loguru import logger
 from pydantic import BaseModel
@@ -46,7 +46,7 @@ def run_bronze(
         downloader: Optional injected Downloader instance.
     """
     crawler = crawler or Crawler()
-    downloader = downloader or Downloader(output_dir=output_dir)
+    downloader = downloader or Downloader(output_dir=Path(output_dir))
 
     all_ids: List[str] = []
 
@@ -135,11 +135,11 @@ def run_silver(
                 trial = parser.parse_trial(content, url_source=url_source)
                 # Ensure ID matches filename just in case
                 if trial.eudract_number != trial_id:
-                     logger.warning(f"Filename {trial_id} mismatch with content {trial.eudract_number}")
+                    logger.warning(f"Filename {trial_id} mismatch with content {trial.eudract_number}")
                 trials.append(trial)
             except ValueError as e:
-                 logger.warning(f"Failed to parse trial from {file_path}: {e}")
-                 continue
+                logger.warning(f"Failed to parse trial from {file_path}: {e}")
+                continue
 
             # Parse Drugs
             trial_drugs = parser.parse_drugs(content, trial_id)
@@ -188,6 +188,7 @@ class StringIteratorIO(io.TextIOBase):
     """
     Helper to adapt a generator of strings into a file-like object for copy().
     """
+
     def __init__(self, iterator: Iterator[str]):
         self._iterator = iterator
         self._buffer = ""
@@ -206,13 +207,15 @@ class StringIteratorIO(io.TextIOBase):
             return ""
 
 
-def _load_table(loader: BaseLoader, pipeline: Pipeline, data: List[BaseModel], table_name: str) -> None:
+def _load_table(loader: BaseLoader, pipeline: Pipeline, data: Sequence[BaseModel], table_name: str) -> None:
     if not data:
         return
 
     gen = pipeline.stage_data(data)
     stream = StringIteratorIO(gen)
-    loader.bulk_load_stream(stream, table_name)
+    # The BaseLoader interface expects IO[str], and StringIteratorIO is a TextIOBase which is IO[str].
+    # However, mypy is strict. Explicitly typing stream helps.
+    loader.bulk_load_stream(stream, table_name)  # type: ignore[arg-type]
 
 
 def hello_world() -> str:

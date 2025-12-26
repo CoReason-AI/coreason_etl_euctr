@@ -10,9 +10,8 @@
 
 import csv
 import io
-from typing import Any, Generator, Iterable, Set, Type
+from typing import Any, Generator, Iterable, Set
 
-from loguru import logger
 from pydantic import BaseModel
 
 
@@ -80,12 +79,7 @@ class Pipeline:
             output.truncate(0)
 
     def _process_item(
-        self,
-        item: BaseModel,
-        headers: list[str],
-        seen_hashes: Set[int],
-        writer: Any,
-        output: io.StringIO
+        self, item: BaseModel, headers: list[str], seen_hashes: Set[int], writer: Any, output: io.StringIO
     ) -> None:
         """
         Helper to process a single item: dedup check and write to buffer.
@@ -104,7 +98,7 @@ class Pipeline:
         seen_hashes.add(item_hash)
 
         # Extract values in order of headers
-        data = item.model_dump(mode='json')
+        data = item.model_dump(mode="json")
         row = [data.get(h) for h in headers]
 
         # Handle simple transformations if needed (e.g. None to "")

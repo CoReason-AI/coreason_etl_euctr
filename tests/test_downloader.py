@@ -16,7 +16,7 @@ import pytest
 from coreason_etl_euctr.downloader import Downloader
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def mock_httpx_client() -> MagicMock:
     return MagicMock(spec=httpx.Client)
 
