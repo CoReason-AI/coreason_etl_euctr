@@ -138,7 +138,8 @@ class PostgresLoader(BaseLoader):
             raise ValueError("Conflict keys required for upsert.")
 
         # Generate a unique temp table name to avoid collisions in concurrent sessions (though usually session local)
-        # Using a random suffix just to be safe if multiple calls happen in same session/transaction context if not dropped.
+        # Using a random suffix just to be safe if multiple calls happen in same session/transaction
+        # context if not dropped.
         suffix = "".join(random.choices(string.ascii_lowercase, k=6))
         temp_table = f"{target_table}_staging_{suffix}"
 
@@ -148,7 +149,10 @@ class PostgresLoader(BaseLoader):
                 # "CREATE TEMP TABLE ... LIKE ... INCLUDING ALL" copies structure.
                 # However, Postgres temp tables are session-local.
                 logger.debug(f"Creating temp table {temp_table}...")
-                cur.execute(f"CREATE TEMP TABLE {temp_table} (LIKE {target_table} INCLUDING ALL) ON COMMIT DROP")
+                create_temp_sql = (
+                    f"CREATE TEMP TABLE {temp_table} " f"(LIKE {target_table} INCLUDING ALL) " "ON COMMIT DROP"
+                )
+                cur.execute(create_temp_sql)
 
                 # 2. Bulk Load to Temp Table
                 sql_copy = f"COPY {temp_table} FROM STDIN WITH (FORMAT CSV, HEADER)"

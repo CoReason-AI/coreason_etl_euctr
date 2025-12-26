@@ -235,7 +235,7 @@ def test_upsert_stream_no_columns(mock_psycopg_connect: MagicMock) -> None:
 def test_upsert_stream_missing_conflict_keys() -> None:
     """Test ValueError if conflict_keys missing."""
     loader = PostgresLoader()
-    loader.conn = MagicMock() # fake connection
+    loader.conn = MagicMock()  # fake connection
     data = io.StringIO("data")
 
     with pytest.raises(ValueError, match="Conflict keys required"):
