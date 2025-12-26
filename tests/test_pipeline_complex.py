@@ -9,12 +9,10 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from datetime import date, datetime
-from typing import List, Optional
-
-import pytest
-from pydantic import BaseModel
+from typing import Optional
 
 from coreason_etl_euctr.pipeline import Pipeline
+from pydantic import BaseModel
 
 
 class ComplexModel(BaseModel):
@@ -39,24 +37,24 @@ def test_csv_injection_and_escaping() -> None:
     data = [
         ComplexModel(
             id=1,
-            text_field='Hello, World',
+            text_field="Hello, World",
             date_field=date(2023, 1, 1),
             datetime_field=datetime(2023, 1, 1, 12, 0, 0),
-            bool_field=True
+            bool_field=True,
         ),
         ComplexModel(
             id=2,
             text_field='She said "Hi"',
             date_field=date(2023, 1, 1),
             datetime_field=datetime(2023, 1, 1, 12, 0, 0),
-            bool_field=False
+            bool_field=False,
         ),
         ComplexModel(
             id=3,
-            text_field='Line 1\nLine 2',
+            text_field="Line 1\nLine 2",
             date_field=date(2023, 1, 1),
             datetime_field=datetime(2023, 1, 1, 12, 0, 0),
-            bool_field=True
+            bool_field=True,
         ),
     ]
 
@@ -85,7 +83,7 @@ def test_unicode_handling() -> None:
             text_field=text,
             date_field=date(2023, 1, 1),
             datetime_field=datetime(2023, 1, 1, 12, 0, 0),
-            bool_field=True
+            bool_field=True,
         )
     ]
 
@@ -106,15 +104,7 @@ def test_serialization_formats() -> None:
     dt = datetime(2023, 10, 25, 14, 30, 0)
     d = date(2023, 10, 25)
 
-    data = [
-        ComplexModel(
-            id=1,
-            text_field="test",
-            date_field=d,
-            datetime_field=dt,
-            bool_field=True
-        )
-    ]
+    data = [ComplexModel(id=1, text_field="test", date_field=d, datetime_field=dt, bool_field=True)]
 
     chunks = list(pipeline.stage_data(data))
     row = chunks[1]
@@ -142,7 +132,7 @@ def test_large_dataset_performance() -> None:
             text_field=f"Row {i}",
             date_field=date(2023, 1, 1),
             datetime_field=datetime(2023, 1, 1, 12, 0, 0),
-            bool_field=(i % 2 == 0)
+            bool_field=(i % 2 == 0),
         )
         for i in range(count)
     )

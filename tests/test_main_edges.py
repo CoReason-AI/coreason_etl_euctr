@@ -11,8 +11,6 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from coreason_etl_euctr.main import run_silver
 from coreason_etl_euctr.models import EuTrial
 
@@ -38,7 +36,7 @@ def test_run_silver_mixed_results(tmp_path: Path) -> None:
     mock_parser.parse_trial.side_effect = [
         EuTrial(eudract_number="success1", url_source="s"),
         ValueError("Parse Error"),
-        EuTrial(eudract_number="success2", url_source="s")
+        EuTrial(eudract_number="success2", url_source="s"),
     ]
     mock_parser.parse_drugs.return_value = []
     mock_parser.parse_conditions.return_value = []
@@ -66,7 +64,7 @@ def test_run_silver_mixed_results(tmp_path: Path) -> None:
     mock_parser.parse_trial.side_effect = [
         EuTrial(eudract_number="success1", url_source="s"),
         ValueError("Parse Error"),
-        EuTrial(eudract_number="success2", url_source="s")
+        EuTrial(eudract_number="success2", url_source="s"),
     ]
 
     run_silver(input_dir=str(d), parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
@@ -92,9 +90,7 @@ def test_run_silver_large_number_of_files(tmp_path: Path) -> None:
         (d / f"{i}.html").write_text("content")
 
     mock_parser = MagicMock()
-    mock_parser.parse_trial.side_effect = [
-        EuTrial(eudract_number=str(i), url_source="s") for i in range(50)
-    ]
+    mock_parser.parse_trial.side_effect = [EuTrial(eudract_number=str(i), url_source="s") for i in range(50)]
     mock_parser.parse_drugs.return_value = []
     mock_parser.parse_conditions.return_value = []
 
