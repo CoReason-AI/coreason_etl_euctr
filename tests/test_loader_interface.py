@@ -52,6 +52,9 @@ def test_valid_concrete_implementation() -> None:
         def upsert_stream(self, data_stream: IO[str], target_table: str, conflict_keys: list[str]) -> None:
             pass
 
+        def truncate_tables(self, table_names: list[str]) -> None:
+            pass
+
         def commit(self) -> None:
             pass
 
