@@ -62,6 +62,7 @@ class Pipeline:
     def save_state(self, state: Dict[str, Any]) -> None:
         """
         Save the pipeline state to the JSON file.
+        Uses atomic write pattern (write to temp -> rename).
 
         Args:
             state: Dictionary containing the state to save.
@@ -70,10 +71,24 @@ class Pipeline:
             # Ensure parent directory exists
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
 
-            with self.state_file.open("w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2)
+            # Write to a temporary file
+            temp_file = self.state_file.with_suffix(".tmp")
+
+            with temp_file.open("w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2, ensure_ascii=False)
+
+            # Atomic rename
+            temp_file.replace(self.state_file)
+
         except Exception as e:
             logger.error(f"Failed to save state to {self.state_file}: {e}")
+            # Try to cleanup temp file if it exists
+            try:
+                temp_file_cleanup = self.state_file.with_suffix(".tmp")
+                if temp_file_cleanup.exists():
+                    temp_file_cleanup.unlink()
+            except Exception:
+                pass
 
     def get_high_water_mark(self) -> Optional[date]:
         """
