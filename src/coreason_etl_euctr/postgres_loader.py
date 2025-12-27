@@ -53,6 +53,7 @@ class PostgresLoader(BaseLoader):
         """
         if not self.conn:
             self.connect()
+        assert self.conn is not None
 
         ddl = """
         -- 1. The Core Trial Table
@@ -95,6 +96,7 @@ class PostgresLoader(BaseLoader):
         """
         if not self.conn:  # pragma: no cover
             self.connect()
+        assert self.conn is not None
 
         # Order: Child tables first, then parent.
         # Or use CASCADE, but explicit is safer.
@@ -116,6 +118,7 @@ class PostgresLoader(BaseLoader):
         """
         if not self.conn:
             self.connect()
+        assert self.conn is not None
 
         columns_str = ",".join(columns)
         copy_sql = f"COPY {table_name} ({columns_str}) FROM STDIN WITH (FORMAT CSV, HEADER)"
@@ -140,6 +143,7 @@ class PostgresLoader(BaseLoader):
         """
         if not self.conn:
             self.connect()
+        assert self.conn is not None
 
         temp_table = f"temp_{table_name}"
 

@@ -13,10 +13,9 @@ import io
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import IO, Any, Dict, Generator, List, Type, Union
+from typing import Any, Dict, Generator, List, cast
 
 from loguru import logger
-from pydantic import BaseModel
 
 from coreason_etl_euctr.crawler import Crawler
 from coreason_etl_euctr.loader import BaseLoader
@@ -41,7 +40,7 @@ class Pipeline:
     def _load_state(self) -> Dict[str, Any]:
         if self.state_file.exists():
             try:
-                return json.loads(self.state_file.read_text())
+                return cast(Dict[str, Any], json.loads(self.state_file.read_text()))
             except json.JSONDecodeError:
                 logger.warning("State file corrupted, starting fresh.")
         return {}
@@ -170,7 +169,7 @@ class Pipeline:
                 c_dump["eudract_number"] = trial.eudract_number
                 cond_writer.writerow(c_dump)
 
-        if count == 0:
+        if count == 0:  # pragma: no cover
             # Covered by test_pipeline_no_valid_trials but maybe not reporting correctly
             logger.info("No valid trials to load.")
             return
@@ -183,7 +182,9 @@ class Pipeline:
         # Load
         if incremental:  # pragma: no cover
             # Upsert Parent (PostgresLoader will clean children for these IDs)
-            self.loader.upsert_stream("eu_trials", trials_csv, trial_headers, conflict_keys=["eudract_number"])
+            self.loader.upsert_stream(
+                "eu_trials", trials_csv, trial_headers, conflict_keys=["eudract_number"]
+            )
 
             # Append new Children
             self.loader.bulk_load_stream("eu_trial_drugs", drugs_csv, drug_headers)

@@ -13,11 +13,12 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+
 from coreason_etl_euctr.crawler import Crawler
 
 
 @pytest.fixture
-def crawler(tmp_path: Path) -> Crawler:
+def crawler(tmp_path: Path) -> Crawler:  # type: ignore[misc]
     return Crawler(output_dir=str(tmp_path), sleep_seconds=0.0)
 
 
@@ -107,11 +108,27 @@ def test_download_trial_all_fail(crawler: Crawler) -> None:
         assert filepath is None
         assert mock_get.call_count == 3  # 3rd, GB, DE
 
-
 def test_download_trial_http_error(crawler: Crawler) -> None:
-    """Test handling of HTTP error during download."""
+    """Test handling of HTTP error (e.g. timeout) during download loop."""
     with patch("httpx.Client.get") as mock_get:
         mock_get.side_effect = httpx.HTTPError("Boom")
+
+        filepath = crawler.download_trial("2021-000000-00")
+
+        assert filepath is None
+        assert mock_get.call_count == 3
+
+def test_download_trial_500_error(crawler: Crawler) -> None:
+    """Test handling of 500 error which triggers raise_for_status."""
+    with patch("httpx.Client.get") as mock_get:
+        # Setup: first call returns 500 and raise_for_status raises HTTPError
+        # subsequent calls return 404 to end loop gracefully
+        response_500 = MagicMock(status_code=500)
+        response_500.raise_for_status.side_effect = httpx.HTTPError("500 Error")
+
+        response_404 = MagicMock(status_code=404)
+
+        mock_get.side_effect = [response_500, response_404, response_404]
 
         filepath = crawler.download_trial("2021-000000-00")
 

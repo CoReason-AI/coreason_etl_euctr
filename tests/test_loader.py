@@ -8,29 +8,30 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-import os
 from io import StringIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, mock_open, patch
+import os
 
 import pytest
+from psycopg import OperationalError
+
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 
 @pytest.fixture
-def loader() -> PostgresLoader:
+def loader() -> PostgresLoader:  # type: ignore[misc]
     # Use dummy DSN to avoid env var lookups unless testing that
     return PostgresLoader(dsn="postgresql://user:pass@localhost:5432/db")
 
 
 def test_init_env_vars() -> None:
     """Test initialization with environment variables."""
-    with patch.dict(
-        os.environ,
-        {"DB_USER": "u", "DB_PASS": "p", "DB_HOST": "h", "DB_PORT": "5432", "DB_NAME": "d", "DATABASE_URL": ""},
-    ):
+    with patch.dict(os.environ, {
+        "DB_USER": "u", "DB_PASS": "p", "DB_HOST": "h",
+        "DB_PORT": "5432", "DB_NAME": "d", "DATABASE_URL": ""
+    }):
         _loader = PostgresLoader(dsn=None)
         assert _loader.dsn == "postgresql://u:p@h:5432/d"
-
 
 def test_connect_success(loader: PostgresLoader) -> None:
     with patch("psycopg.connect") as mock_connect:
@@ -89,7 +90,7 @@ def test_bulk_load_stream_rollback_on_error(loader: PostgresLoader) -> None:
         # Simulate error during copy
         mock_cursor.copy.side_effect = ValueError("Copy Failed")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: B017
             loader.bulk_load_stream("test_table", csv_data, ["col1"])
 
         assert mock_conn.rollback.called
@@ -117,7 +118,6 @@ def test_upsert_stream(loader: PostgresLoader) -> None:
 
         assert mock_conn.commit.called
 
-
 def test_upsert_stream_no_update_cols(loader: PostgresLoader) -> None:
     """Test upsert where all columns are conflict keys (DO NOTHING)."""
     csv_data = StringIO("id\n1")
@@ -137,7 +137,6 @@ def test_upsert_stream_no_update_cols(loader: PostgresLoader) -> None:
         merge_call = mock_cursor.execute.call_args_list[1]
         assert "DO NOTHING" in merge_call[0][0]
 
-
 def test_upsert_rollback_on_error(loader: PostgresLoader) -> None:
     csv_data = StringIO("data")
     with patch("psycopg.connect") as mock_connect:
@@ -148,11 +147,10 @@ def test_upsert_rollback_on_error(loader: PostgresLoader) -> None:
 
         mock_cursor.execute.side_effect = ValueError("Upsert Fail")
 
-        with pytest.raises(ValueError):
-            loader.upsert_stream("t", csv_data, ["a"], ["a"])
+        with pytest.raises(ValueError):  # noqa: B017
+             loader.upsert_stream("t", csv_data, ["a"], ["a"])
 
         assert mock_conn.rollback.called
-
 
 def test_close(loader: PostgresLoader) -> None:
     loader.conn = MagicMock()

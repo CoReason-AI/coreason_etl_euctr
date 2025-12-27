@@ -12,20 +12,21 @@ import argparse
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
-import coreason_etl_euctr.main as main_module
 import pytest
+
+import coreason_etl_euctr.main as main_module
 from coreason_etl_euctr.models import EuTrial
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 
 @pytest.fixture
-def mock_loader() -> MagicMock:
+def mock_loader() -> MagicMock:  # type: ignore[misc]
     return MagicMock(spec=PostgresLoader)
 
 
 @pytest.fixture
-def pipeline(mock_loader: MagicMock, tmp_path: Path) -> Pipeline:
+def pipeline(mock_loader: MagicMock, tmp_path: Path) -> Pipeline:  # type: ignore[misc]
     return Pipeline(mock_loader, bronze_dir=str(tmp_path), state_file=str(tmp_path / "state.json"))
 
 
@@ -96,7 +97,6 @@ def test_main_bronze() -> None:
             main_module.main()
             mock_run.assert_called_once()
 
-
 def test_main_silver() -> None:
     with patch("argparse.ArgumentParser.parse_args") as mock_args:
         with patch("coreason_etl_euctr.main.run_silver") as mock_run:
@@ -104,7 +104,6 @@ def test_main_silver() -> None:
 
             main_module.main()
             mock_run.assert_called_once()
-
 
 def test_run_silver_cli_execution() -> None:
     # Test the actual run_silver function logic
@@ -121,15 +120,13 @@ def test_run_silver_cli_execution() -> None:
             instance.run_silver.assert_called_with(incremental=False)
             loader.close.assert_called()
 
-
 def test_run_bronze_cli_execution() -> None:
     args = argparse.Namespace(output_dir="out", query="q", start_page=1, max_pages=1)
     with patch("coreason_etl_euctr.main.Pipeline") as MockPipeline:
-        instance = MockPipeline.return_value
-        # Access function directly from module
-        main_module.run_bronze(args)
-        instance.run_bronze.assert_called_with(query="q", start_page=1, max_pages=1)
-
+         instance = MockPipeline.return_value
+         # Access function directly from module
+         main_module.run_bronze(args)
+         instance.run_bronze.assert_called_with(query="q", start_page=1, max_pages=1)
 
 def test_parse_files_error_handling(pipeline: Pipeline, tmp_path: Path) -> None:
     """Test that individual file parse errors don't stop the generator."""
@@ -153,13 +150,11 @@ def test_parse_files_error_handling(pipeline: Pipeline, tmp_path: Path) -> None:
         assert len(results) == 1
         assert results[0] == trial
 
-
 def test_main_if_name_main() -> None:
     """Cover the if __name__ == '__main__': block"""
     # This is hard to test directly via imports, but we can mock main()
     # and execute the file as script, or just trust it.
     pass
-
 
 def test_pipeline_incremental_no_children(pipeline: Pipeline, tmp_path: Path) -> None:
     """Cover branch where trial has no drugs/conditions in incremental mode."""
@@ -171,7 +166,6 @@ def test_pipeline_incremental_no_children(pipeline: Pipeline, tmp_path: Path) ->
         # Should call upsert for trial and bulk load for empty children
         assert pipeline.loader.bulk_load_stream.call_count == 2
 
-
 def test_pipeline_no_valid_trials(pipeline: Pipeline, tmp_path: Path) -> None:
     """Cover the 'if count == 0' branch."""
     (tmp_path / "t.html").write_text("ok")
@@ -180,7 +174,6 @@ def test_pipeline_no_valid_trials(pipeline: Pipeline, tmp_path: Path) -> None:
         pipeline.run_silver()
 
     assert not pipeline.loader.bulk_load_stream.called
-
 
 def test_state_management(pipeline: Pipeline, tmp_path: Path) -> None:
     """Test loading and saving state."""
@@ -200,18 +193,15 @@ def test_state_management(pipeline: Pipeline, tmp_path: Path) -> None:
     loaded = pipeline._load_state()
     assert loaded["foo"] == "bar"
 
-
 def test_run_silver_full_load_truncates(pipeline: Pipeline, tmp_path: Path) -> None:
     """Verify truncate_tables is called on full load."""
     pipeline.run_silver(incremental=False)
     assert pipeline.loader.truncate_tables.called
 
-
 def test_run_silver_incremental_no_truncate(pipeline: Pipeline, tmp_path: Path) -> None:
     """Verify truncate_tables is NOT called on incremental load."""
     pipeline.run_silver(incremental=True)
     assert not pipeline.loader.truncate_tables.called
-
 
 def test_run_bronze_failed_download_count(pipeline: Pipeline) -> None:
     """Cover the path where download fails (returns None) so count doesn't increment."""
@@ -219,3 +209,19 @@ def test_run_bronze_failed_download_count(pipeline: Pipeline) -> None:
         with patch("coreason_etl_euctr.crawler.Crawler.download_trial", return_value=None):
             pipeline.run_bronze()
             # If log verification was here, we'd check 'Downloaded 0/1'
+
+def test_stage_and_load_direct(pipeline: Pipeline) -> None:
+    """Directly test _stage_and_load to ensure coverage of both branches."""
+    trial = EuTrial(eudract_number="ID1")
+
+    # Test Incremental
+    pipeline.loader.reset_mock()
+    pipeline._stage_and_load((t for t in [trial]), incremental=True)
+    assert pipeline.loader.upsert_stream.called
+    assert pipeline.loader.bulk_load_stream.called
+
+    # Test Full
+    pipeline.loader.reset_mock()
+    pipeline._stage_and_load((t for t in [trial]), incremental=False)
+    assert not pipeline.loader.upsert_stream.called
+    assert pipeline.loader.bulk_load_stream.call_count == 3
