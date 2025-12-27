@@ -10,16 +10,99 @@
 
 import csv
 import io
-from typing import Any, Generator, Iterable, Set
+import json
+from datetime import date
+from pathlib import Path
+from typing import Any, Dict, Generator, Iterable, Optional, Set, Union
 
+from loguru import logger
 from pydantic import BaseModel
 
 
 class Pipeline:
     """
     Staging layer responsible for transforming Pydantic models into CSV streams
-    ready for native bulk loading.
+    ready for native bulk loading, and managing the orchestration state.
     """
+
+    def __init__(self, state_file: Union[str, Path] = "data/state.json") -> None:
+        """
+        Initialize the Pipeline.
+
+        Args:
+            state_file: Path to the JSON state file.
+        """
+        self.state_file = Path(state_file)
+
+    def load_state(self) -> Dict[str, Any]:
+        """
+        Load the pipeline state from the JSON file.
+
+        Returns:
+            A dictionary containing the state. Returns empty dict if file missing or corrupted.
+        """
+        if not self.state_file.exists():
+            return {}
+
+        try:
+            content = self.state_file.read_text(encoding="utf-8")
+            data = json.loads(content)
+            if not isinstance(data, dict):
+                logger.warning(f"State file {self.state_file} contains invalid data type (not dict). Resetting.")
+                return {}
+            # Cast for MyPy; json.loads returns Any, but we checked isinstance dict
+            return dict(data)
+        except json.JSONDecodeError:
+            logger.warning(f"State file {self.state_file} is corrupted. Resetting state.")
+            return {}
+        except Exception as e:
+            logger.error(f"Failed to load state from {self.state_file}: {e}")
+            return {}
+
+    def save_state(self, state: Dict[str, Any]) -> None:
+        """
+        Save the pipeline state to the JSON file.
+
+        Args:
+            state: Dictionary containing the state to save.
+        """
+        try:
+            # Ensure parent directory exists
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+
+            with self.state_file.open("w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save state to {self.state_file}: {e}")
+
+    def get_high_water_mark(self) -> Optional[date]:
+        """
+        Get the last updated timestamp from the state.
+
+        Returns:
+            The date object representing the high water mark, or None if not set/invalid.
+        """
+        state = self.load_state()
+        val = state.get("last_updated")
+        if not val:
+            return None
+
+        try:
+            return date.fromisoformat(val)
+        except ValueError:
+            logger.warning(f"Invalid date format in state: {val}")
+            return None
+
+    def set_high_water_mark(self, new_date: date) -> None:
+        """
+        Update the high water mark in the state.
+
+        Args:
+            new_date: The new date to set.
+        """
+        state = self.load_state()
+        state["last_updated"] = new_date.isoformat()
+        self.save_state(state)
 
     def stage_data(self, models: Iterable[BaseModel]) -> Generator[str, None, None]:
         """
