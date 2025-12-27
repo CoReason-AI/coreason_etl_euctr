@@ -37,11 +37,7 @@ def test_state_key_preservation(tmp_path: Path) -> None:
     pipeline = Pipeline(state_file=state_file)
 
     # Initial state with extra metadata
-    initial_state = {
-        "run_count": 42,
-        "config": {"mode": "delta"},
-        "last_updated": "2020-01-01"
-    }
+    initial_state = {"run_count": 42, "config": {"mode": "delta"}, "last_updated": "2020-01-01"}
     state_file.write_text(json.dumps(initial_state))
 
     # Update high water mark
@@ -61,11 +57,7 @@ def test_unicode_support(tmp_path: Path) -> None:
     pipeline = Pipeline(state_file=state_file)
 
     # Unicode content (e.g. Greek, Emoji, Kanji)
-    unicode_state = {
-        "message": "Γειά σου Κόσμε",
-        "emoji": "💊",
-        "kanji": "臨床試験"
-    }
+    unicode_state = {"message": "Γειά σου Κόσμε", "emoji": "💊", "kanji": "臨床試験"}
 
     pipeline.save_state(unicode_state)
 
