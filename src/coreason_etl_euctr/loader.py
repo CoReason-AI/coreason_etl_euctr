@@ -67,6 +67,16 @@ class BaseLoader(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
+    def truncate_tables(self, table_names: List[str]) -> None:
+        """
+        Truncate the specified tables.
+
+        Args:
+            table_names: A list of table names to truncate.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
     def commit(self) -> None:
         """
         Commit the current transaction.
