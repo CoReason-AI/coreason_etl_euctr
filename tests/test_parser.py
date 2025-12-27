@@ -11,8 +11,6 @@
 from datetime import date
 
 import pytest
-from pydantic import ValidationError
-
 from coreason_etl_euctr.parser import Parser
 
 
@@ -75,7 +73,7 @@ def test_parse_drugs_section(parser: Parser) -> None:
     assert d1.pharmaceutical_form == "Tablet"
 
     d2 = next(d for d in trial.drugs if d.drug_name == "Placebo")
-    assert d2.active_ingredient == "SugarPill" # Fallback to Product Name
+    assert d2.active_ingredient == "SugarPill"  # Fallback to Product Name
     assert d2.pharmaceutical_form == "Capsule"
 
 
@@ -121,6 +119,7 @@ def test_date_formats(parser: Parser) -> None:
     # Invalid
     trial = parser.parse_file(html_template.format("Not a date"))
     assert trial.start_date is None
+
 
 def test_clean_text_utility(parser: Parser) -> None:
     html = """

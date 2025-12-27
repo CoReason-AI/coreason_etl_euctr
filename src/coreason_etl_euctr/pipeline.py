@@ -13,7 +13,7 @@ import io
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Generator, List, cast
+from typing import Any, Dict, Generator, List
 
 from loguru import logger
 
@@ -40,7 +40,7 @@ class Pipeline:
     def _load_state(self) -> Dict[str, Any]:
         if self.state_file.exists():
             try:
-                return cast(Dict[str, Any], json.loads(self.state_file.read_text()))
+                return json.loads(self.state_file.read_text())  # type: ignore[no-any-return]
             except json.JSONDecodeError:
                 logger.warning("State file corrupted, starting fresh.")
         return {}
@@ -180,7 +180,7 @@ class Pipeline:
         conditions_csv.seek(0)
 
         # Load
-        if incremental:  # pragma: no cover
+        if incremental:
             # Upsert Parent (PostgresLoader will clean children for these IDs)
             self.loader.upsert_stream(
                 "eu_trials", trials_csv, trial_headers, conflict_keys=["eudract_number"]
@@ -189,7 +189,7 @@ class Pipeline:
             # Append new Children
             self.loader.bulk_load_stream("eu_trial_drugs", drugs_csv, drug_headers)
             self.loader.bulk_load_stream("eu_trial_conditions", conditions_csv, cond_headers)
-        else:  # pragma: no cover
+        else:
             # Full Load (Truncate already happened)
             self.loader.bulk_load_stream("eu_trials", trials_csv, trial_headers)
             self.loader.bulk_load_stream("eu_trial_drugs", drugs_csv, drug_headers)

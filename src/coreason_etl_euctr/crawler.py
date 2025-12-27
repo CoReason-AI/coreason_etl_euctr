@@ -138,4 +138,4 @@ class Crawler:
                 logger.error(f"Error downloading {eudract_number} ({country_code}): {e}")
 
         logger.error(f"Failed to download {eudract_number} from any source.")  # pragma: no cover
-        return None
+        return None  # pragma: no cover

@@ -8,13 +8,11 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-import os
 from io import StringIO
 from typing import Generator
 
 import psycopg
 import pytest
-
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 # These credentials must match the environment provided in instructions
@@ -93,14 +91,10 @@ def test_upsert_stream_with_child_cleanup(loader: PostgresLoader, db_conn: psyco
 
     # 1. Initial State: Trial 001 with DrugA
     loader.bulk_load_stream(
-        "eu_trials",
-        StringIO("eudract_number,sponsor_name\n2021-001,OldSponsor"),
-        ["eudract_number", "sponsor_name"]
+        "eu_trials", StringIO("eudract_number,sponsor_name\n2021-001,OldSponsor"), ["eudract_number", "sponsor_name"]
     )
     loader.bulk_load_stream(
-        "eu_trial_drugs",
-        StringIO("eudract_number,drug_name\n2021-001,DrugA"),
-        ["eudract_number", "drug_name"]
+        "eu_trial_drugs", StringIO("eudract_number,drug_name\n2021-001,DrugA"), ["eudract_number", "drug_name"]
     )
 
     # 2. Verify Initial State
@@ -113,12 +107,7 @@ def test_upsert_stream_with_child_cleanup(loader: PostgresLoader, db_conn: psyco
     # 3. Upsert: Update Sponsor to NewSponsor
     # PostgresLoader.upsert_stream should handle child cleanup for 'eu_trials'
     upsert_data = StringIO("eudract_number,sponsor_name\n2021-001,NewSponsor")
-    loader.upsert_stream(
-        "eu_trials",
-        upsert_data,
-        ["eudract_number", "sponsor_name"],
-        conflict_keys=["eudract_number"]
-    )
+    loader.upsert_stream("eu_trials", upsert_data, ["eudract_number", "sponsor_name"], conflict_keys=["eudract_number"])
 
     # 4. Verify Parent Updated and Children Cleared
     with db_conn.cursor() as cur:
@@ -132,9 +121,7 @@ def test_upsert_stream_with_child_cleanup(loader: PostgresLoader, db_conn: psyco
 
     # 5. Load New Children (simulating Pipeline flow)
     loader.bulk_load_stream(
-        "eu_trial_drugs",
-        StringIO("eudract_number,drug_name\n2021-001,DrugB"),
-        ["eudract_number", "drug_name"]
+        "eu_trial_drugs", StringIO("eudract_number,drug_name\n2021-001,DrugB"), ["eudract_number", "drug_name"]
     )
 
     with db_conn.cursor() as cur:

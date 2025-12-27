@@ -53,6 +53,7 @@ class PostgresLoader(BaseLoader):
         """
         if not self.conn:
             self.connect()
+
         assert self.conn is not None
 
         ddl = """
@@ -96,6 +97,7 @@ class PostgresLoader(BaseLoader):
         """
         if not self.conn:  # pragma: no cover
             self.connect()
+
         assert self.conn is not None
 
         # Order: Child tables first, then parent.
@@ -118,6 +120,7 @@ class PostgresLoader(BaseLoader):
         """
         if not self.conn:
             self.connect()
+
         assert self.conn is not None
 
         columns_str = ",".join(columns)
@@ -143,6 +146,7 @@ class PostgresLoader(BaseLoader):
         """
         if not self.conn:
             self.connect()
+
         assert self.conn is not None
 
         temp_table = f"temp_{table_name}"
@@ -165,8 +169,7 @@ class PostgresLoader(BaseLoader):
                 if table_name == "eu_trials":
                     # Delete from children where eudract_number is in temp table
                     del_sql_drugs = (
-                        f"DELETE FROM eu_trial_drugs WHERE eudract_number IN "
-                        f"(SELECT eudract_number FROM {temp_table})"
+                        f"DELETE FROM eu_trial_drugs WHERE eudract_number IN (SELECT eudract_number FROM {temp_table})"
                     )
                     cur.execute(del_sql_drugs)
                     del_sql_conds = (

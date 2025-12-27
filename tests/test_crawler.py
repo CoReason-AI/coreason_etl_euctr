@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-
 from coreason_etl_euctr.crawler import Crawler
 
 
@@ -108,6 +107,7 @@ def test_download_trial_all_fail(crawler: Crawler) -> None:
         assert filepath is None
         assert mock_get.call_count == 3  # 3rd, GB, DE
 
+
 def test_download_trial_http_error(crawler: Crawler) -> None:
     """Test handling of HTTP error (e.g. timeout) during download loop."""
     with patch("httpx.Client.get") as mock_get:
@@ -117,6 +117,7 @@ def test_download_trial_http_error(crawler: Crawler) -> None:
 
         assert filepath is None
         assert mock_get.call_count == 3
+
 
 def test_download_trial_500_error(crawler: Crawler) -> None:
     """Test handling of 500 error which triggers raise_for_status."""
