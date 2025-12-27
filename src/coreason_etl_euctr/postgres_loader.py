@@ -208,6 +208,28 @@ class PostgresLoader(BaseLoader):
             logger.error(f"Upsert failed for {target_table}: {e}")
             raise
 
+    def truncate_tables(self, table_names: List[str]) -> None:
+        """
+        Truncate the specified tables using TRUNCATE TABLE ... CASCADE.
+        """
+        if not self.conn:
+            raise RuntimeError("Database not connected.")
+
+        if not table_names:
+            return
+
+        tables_str = ", ".join(table_names)
+        sql = f"TRUNCATE TABLE {tables_str} CASCADE"
+
+        try:
+            with self.conn.cursor() as cur:
+                logger.debug(f"Truncating tables: {tables_str}")
+                cur.execute(sql)
+            logger.info(f"Truncated tables: {tables_str}")
+        except psycopg.Error as e:
+            logger.error(f"Failed to truncate tables {tables_str}: {e}")
+            raise
+
     def commit(self) -> None:
         """Commit transaction."""
         if self.conn:
