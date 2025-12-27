@@ -8,11 +8,10 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import psycopg
 import pytest
-
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 
