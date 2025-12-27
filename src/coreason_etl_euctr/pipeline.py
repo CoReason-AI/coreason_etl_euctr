@@ -182,9 +182,7 @@ class Pipeline:
         # Load
         if incremental:
             # Upsert Parent (PostgresLoader will clean children for these IDs)
-            self.loader.upsert_stream(
-                "eu_trials", trials_csv, trial_headers, conflict_keys=["eudract_number"]
-            )
+            self.loader.upsert_stream("eu_trials", trials_csv, trial_headers, conflict_keys=["eudract_number"])
 
             # Append new Children
             self.loader.bulk_load_stream("eu_trial_drugs", drugs_csv, drug_headers)

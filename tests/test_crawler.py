@@ -16,8 +16,8 @@ import pytest
 from coreason_etl_euctr.crawler import Crawler
 
 
-@pytest.fixture
-def crawler(tmp_path: Path) -> Crawler:  # type: ignore[misc]
+@pytest.fixture  # type: ignore[misc]
+def crawler(tmp_path: Path) -> Crawler:
     return Crawler(output_dir=str(tmp_path), sleep_seconds=0.0)
 
 

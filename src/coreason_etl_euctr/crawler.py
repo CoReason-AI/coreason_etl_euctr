@@ -8,7 +8,6 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-import os
 import time
 from pathlib import Path
 from typing import Generator, List, Optional

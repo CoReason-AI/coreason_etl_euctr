@@ -14,8 +14,8 @@ import pytest
 from coreason_etl_euctr.parser import Parser
 
 
-@pytest.fixture
-def parser() -> Parser:  # type: ignore[misc]
+@pytest.fixture  # type: ignore[misc]
+def parser() -> Parser:
     return Parser()
 
 

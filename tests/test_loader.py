@@ -16,8 +16,8 @@ import pytest
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 
-@pytest.fixture
-def loader() -> PostgresLoader:  # type: ignore[misc]
+@pytest.fixture  # type: ignore[misc]
+def loader() -> PostgresLoader:
     # Use dummy DSN to avoid env var lookups unless testing that
     return PostgresLoader(dsn="postgresql://user:pass@localhost:5432/db")
 

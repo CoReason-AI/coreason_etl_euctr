@@ -55,6 +55,7 @@ class PostgresLoader(BaseLoader):
             self.connect()
 
         assert self.conn is not None
+        conn = self.conn
 
         ddl = """
         -- 1. The Core Trial Table
@@ -86,9 +87,9 @@ class PostgresLoader(BaseLoader):
             meddra_code VARCHAR(50)
         );
         """
-        with self.conn.cursor() as cur:
+        with conn.cursor() as cur:
             cur.execute(ddl)
-        self.conn.commit()
+        conn.commit()
         logger.info("Schema prepared successfully.")
 
     def truncate_tables(self) -> None:
@@ -99,18 +100,19 @@ class PostgresLoader(BaseLoader):
             self.connect()
 
         assert self.conn is not None
+        conn = self.conn
 
         # Order: Child tables first, then parent.
         # Or use CASCADE, but explicit is safer.
         sql = "TRUNCATE TABLE eu_trial_drugs, eu_trial_conditions, eu_trials RESTART IDENTITY;"
 
         try:
-            with self.conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute(sql)
-            self.conn.commit()
+            conn.commit()
             logger.info("Truncated Silver tables.")
         except Exception as e:  # pragma: no cover
-            self.conn.rollback()
+            conn.rollback()
             logger.error(f"Failed to truncate tables: {e}")
             raise
 
@@ -122,19 +124,20 @@ class PostgresLoader(BaseLoader):
             self.connect()
 
         assert self.conn is not None
+        conn = self.conn
 
         columns_str = ",".join(columns)
         copy_sql = f"COPY {table_name} ({columns_str}) FROM STDIN WITH (FORMAT CSV, HEADER)"
 
         try:
-            with self.conn.cursor() as cur:
+            with conn.cursor() as cur:
                 with cur.copy(copy_sql) as copy:
                     while data := data_stream.read(8192):
                         copy.write(data)
-            self.conn.commit()
+            conn.commit()
             logger.info(f"Bulk loaded data into {table_name}")
         except Exception as e:  # pragma: no cover
-            self.conn.rollback()
+            conn.rollback()
             logger.error(f"Failed to bulk load {table_name}: {e}")
             raise
 
@@ -148,11 +151,12 @@ class PostgresLoader(BaseLoader):
             self.connect()
 
         assert self.conn is not None
+        conn = self.conn
 
         temp_table = f"temp_{table_name}"
 
         try:
-            with self.conn.cursor() as cur:
+            with conn.cursor() as cur:
                 # 1. Create Temp Table (Structure like target)
                 cur.execute(f"CREATE TEMP TABLE {temp_table} (LIKE {table_name} INCLUDING DEFAULTS) ON COMMIT DROP")
 
@@ -199,10 +203,10 @@ class PostgresLoader(BaseLoader):
 
                 cur.execute(merge_sql)
 
-            self.conn.commit()
+            conn.commit()
             logger.info(f"Upserted data into {table_name}")
 
         except Exception as e:  # pragma: no cover
-            self.conn.rollback()
+            conn.rollback()
             logger.error(f"Failed to upsert {table_name}: {e}")
             raise

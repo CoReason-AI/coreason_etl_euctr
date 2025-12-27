@@ -10,6 +10,7 @@
 
 import argparse
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, call, patch
 
 import coreason_etl_euctr.main as main_module
@@ -19,13 +20,13 @@ from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 
-@pytest.fixture
-def mock_loader() -> MagicMock:  # type: ignore[misc]
+@pytest.fixture  # type: ignore[misc]
+def mock_loader() -> MagicMock:
     return MagicMock(spec=PostgresLoader)
 
 
-@pytest.fixture
-def pipeline(mock_loader: MagicMock, tmp_path: Path) -> Pipeline:  # type: ignore[misc]
+@pytest.fixture  # type: ignore[misc]
+def pipeline(mock_loader: MagicMock, tmp_path: Path) -> Pipeline:
     return Pipeline(mock_loader, bronze_dir=str(tmp_path), state_file=str(tmp_path / "state.json"))
 
 
@@ -45,9 +46,9 @@ def test_run_bronze(pipeline: Pipeline) -> None:
 def test_run_silver_no_files(pipeline: Pipeline) -> None:
     pipeline.run_silver()
     # Loader schema prep called
-    assert pipeline.loader.prepare_schema.called
+    assert cast(MagicMock, pipeline.loader.prepare_schema).called
     # But bulk load not called
-    assert not pipeline.loader.bulk_load_stream.called
+    assert not cast(MagicMock, pipeline.loader.bulk_load_stream).called
 
 
 def test_run_silver_with_data(pipeline: Pipeline, tmp_path: Path) -> None:
@@ -61,12 +62,12 @@ def test_run_silver_with_data(pipeline: Pipeline, tmp_path: Path) -> None:
         pipeline.run_silver(incremental=False)
 
         # Verify schema prep
-        assert pipeline.loader.prepare_schema.called
+        assert cast(MagicMock, pipeline.loader.prepare_schema).called
 
         # Verify load calls (3 tables)
-        assert pipeline.loader.bulk_load_stream.call_count == 3
+        assert cast(MagicMock, pipeline.loader.bulk_load_stream).call_count == 3
 
-        calls = pipeline.loader.bulk_load_stream.call_args_list
+        calls = cast(MagicMock, pipeline.loader.bulk_load_stream).call_args_list
         assert calls[0][0][0] == "eu_trials"
         assert calls[1][0][0] == "eu_trial_drugs"
         assert calls[2][0][0] == "eu_trial_conditions"
@@ -80,11 +81,11 @@ def test_run_silver_incremental(pipeline: Pipeline, tmp_path: Path) -> None:
         pipeline.run_silver(incremental=True)
 
         # Verify upsert for trials
-        assert pipeline.loader.upsert_stream.called
-        assert pipeline.loader.upsert_stream.call_args[0][0] == "eu_trials"
+        assert cast(MagicMock, pipeline.loader.upsert_stream).called
+        assert cast(MagicMock, pipeline.loader.upsert_stream).call_args[0][0] == "eu_trials"
 
         # Children still bulk loaded (append) as per implementation
-        assert pipeline.loader.bulk_load_stream.call_count == 2
+        assert cast(MagicMock, pipeline.loader.bulk_load_stream).call_count == 2
 
 
 def test_main_bronze() -> None:
@@ -169,7 +170,7 @@ def test_pipeline_incremental_no_children(pipeline: Pipeline, tmp_path: Path) ->
     with patch("coreason_etl_euctr.parser.Parser.parse_file", return_value=trial):
         pipeline.run_silver(incremental=True)
         # Should call upsert for trial and bulk load for empty children
-        assert pipeline.loader.bulk_load_stream.call_count == 2
+        assert cast(MagicMock, pipeline.loader.bulk_load_stream).call_count == 2
 
 
 def test_pipeline_no_valid_trials(pipeline: Pipeline, tmp_path: Path) -> None:
@@ -179,7 +180,7 @@ def test_pipeline_no_valid_trials(pipeline: Pipeline, tmp_path: Path) -> None:
     with patch("coreason_etl_euctr.parser.Parser.parse_file", side_effect=Exception("All fail")):
         pipeline.run_silver()
 
-    assert not pipeline.loader.bulk_load_stream.called
+    assert not cast(MagicMock, pipeline.loader.bulk_load_stream).called
 
 
 def test_state_management(pipeline: Pipeline, tmp_path: Path) -> None:
@@ -204,13 +205,13 @@ def test_state_management(pipeline: Pipeline, tmp_path: Path) -> None:
 def test_run_silver_full_load_truncates(pipeline: Pipeline, tmp_path: Path) -> None:
     """Verify truncate_tables is called on full load."""
     pipeline.run_silver(incremental=False)
-    assert pipeline.loader.truncate_tables.called
+    assert cast(MagicMock, pipeline.loader.truncate_tables).called
 
 
 def test_run_silver_incremental_no_truncate(pipeline: Pipeline, tmp_path: Path) -> None:
     """Verify truncate_tables is NOT called on incremental load."""
     pipeline.run_silver(incremental=True)
-    assert not pipeline.loader.truncate_tables.called
+    assert not cast(MagicMock, pipeline.loader.truncate_tables).called
 
 
 def test_run_bronze_failed_download_count(pipeline: Pipeline) -> None:
@@ -226,13 +227,13 @@ def test_stage_and_load_direct(pipeline: Pipeline) -> None:
     trial = EuTrial(eudract_number="ID1")
 
     # Test Incremental
-    pipeline.loader.reset_mock()
+    pipeline.loader.reset_mock()  # type: ignore[attr-defined]
     pipeline._stage_and_load((t for t in [trial]), incremental=True)
-    assert pipeline.loader.upsert_stream.called
-    assert pipeline.loader.bulk_load_stream.called
+    assert cast(MagicMock, pipeline.loader.upsert_stream).called
+    assert cast(MagicMock, pipeline.loader.bulk_load_stream).called
 
     # Test Full
-    pipeline.loader.reset_mock()
+    pipeline.loader.reset_mock()  # type: ignore[attr-defined]
     pipeline._stage_and_load((t for t in [trial]), incremental=False)
-    assert not pipeline.loader.upsert_stream.called
-    assert pipeline.loader.bulk_load_stream.call_count == 3
+    assert not cast(MagicMock, pipeline.loader.upsert_stream).called
+    assert cast(MagicMock, pipeline.loader.bulk_load_stream).call_count == 3

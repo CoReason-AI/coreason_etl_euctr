@@ -24,8 +24,8 @@ DB_PORT = "5432"
 DSN = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 
-@pytest.fixture
-def db_conn() -> Generator[psycopg.Connection, None, None]:  # type: ignore[misc]
+@pytest.fixture  # type: ignore[misc]
+def db_conn() -> Generator[psycopg.Connection, None, None]:
     """Yields a raw connection for verification."""
     try:
         conn = psycopg.connect(DSN, autocommit=True)
@@ -35,8 +35,8 @@ def db_conn() -> Generator[psycopg.Connection, None, None]:  # type: ignore[misc
         pytest.skip("Database not available")
 
 
-@pytest.fixture
-def loader(db_conn: psycopg.Connection) -> Generator[PostgresLoader, None, None]:  # type: ignore[misc]
+@pytest.fixture  # type: ignore[misc]
+def loader(db_conn: psycopg.Connection) -> Generator[PostgresLoader, None, None]:
     """Yields a configured loader."""
     _loader = PostgresLoader(dsn=DSN)
     _loader.connect()
