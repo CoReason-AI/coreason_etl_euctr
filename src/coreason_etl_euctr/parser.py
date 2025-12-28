@@ -233,13 +233,13 @@ class Parser:
         # We search for the specific codes or labels
         age_map = {
             "F.1.1": "Adults",
-            "F.1.2": "Children", # This is often a header for sub-groups, but sometimes checked itself?
+            "F.1.2": "Children",  # This is often a header for sub-groups, but sometimes checked itself?
             "F.1.3": "Elderly",
             # Sub groups
             "F.1.2.1": "Preterm newborn infants",
             "F.1.2.2": "Newborns",
             "F.1.2.3": "Infants and toddlers",
-            "F.1.2.4": "Children", # 2-11
+            "F.1.2.4": "Children",  # 2-11
             "F.1.2.5": "Adolescents",
         }
 
@@ -270,7 +270,7 @@ class Parser:
             # Or: Label | Value
 
             # Check if this row matches an age group
-            row_text = row.get_text(" ", strip=True)
+            # row_text is already extracted above
 
             # Simple heuristic: Check if row contains known age keywords
             # and the "Yes" we found is in the value column.
@@ -283,14 +283,8 @@ class Parser:
             # Or just rely on row content.
 
             # If "Yes" is found, check the label in the same row.
-            label_text = ""
-            if len(cells) >= 3:
-                 # Assume col 1 is label or col 0 is code and col 1 is label
-                 label_text = cells[1].get_text(strip=True) or cells[0].get_text(strip=True)
-            elif len(cells) == 2:
-                label_text = cells[0].get_text(strip=True)
-
-            # Clean label (remove code F.1.1 etc)
+            # We use the full row text for robust matching.
+            row_text = row.get_text(" ", strip=True)
             # "F.1.1 Adults (18-64 years)" -> "Adults (18-64 years)"
 
             # Check if this label looks like an age group

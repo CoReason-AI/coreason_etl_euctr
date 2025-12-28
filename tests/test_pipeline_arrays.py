@@ -9,15 +9,17 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from typing import List, Optional
+
 from coreason_etl_euctr.pipeline import Pipeline
 from pydantic import BaseModel
-import pytest
+
 
 class ListModel(BaseModel):
     id: int
     tags: Optional[List[str]]
 
-def test_stage_data_list_serialization_simple():
+
+def test_stage_data_list_serialization_simple() -> None:
     """Test serializing a simple list of strings to Postgres array format."""
     pipeline = Pipeline()
     data = [ListModel(id=1, tags=["a", "b"])]
@@ -25,9 +27,10 @@ def test_stage_data_list_serialization_simple():
     chunks = list(pipeline.stage_data(data))
     row = chunks[1].strip()
 
-    assert '1,"{""a"",""b""}"' in row or "1,\"{""a"",""b""}\"" in row
+    assert '1,"{""a"",""b""}"' in row or '1,"{' "a" "," "b" '}"' in row
 
-def test_stage_data_list_serialization_quotes():
+
+def test_stage_data_list_serialization_quotes() -> None:
     """Test serializing list with values containing quotes."""
     pipeline = Pipeline()
     # Value: a"b
@@ -38,14 +41,15 @@ def test_stage_data_list_serialization_quotes():
 
     # Expected: 2,"{""a\""b""}"
     # Just verify key parts to avoid escaping hell in test code
-    assert '{' in row
-    assert '}' in row
+    assert "{" in row
+    assert "}" in row
     # The backslash should be present to escape the quote for Postgres array
-    assert '\\' in row
+    assert "\\" in row
     # The quote should be doubled for CSV
     assert '""' in row
 
-def test_stage_data_list_serialization_none():
+
+def test_stage_data_list_serialization_none() -> None:
     """Test list is None."""
     pipeline = Pipeline()
     data = [ListModel(id=3, tags=None)]
@@ -55,7 +59,8 @@ def test_stage_data_list_serialization_none():
     # Should be empty string
     assert "3," == row or "3," in row
 
-def test_stage_data_list_serialization_empty():
+
+def test_stage_data_list_serialization_empty() -> None:
     """Test empty list."""
     pipeline = Pipeline()
     data = [ListModel(id=4, tags=[])]

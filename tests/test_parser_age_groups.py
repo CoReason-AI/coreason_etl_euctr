@@ -9,16 +9,16 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import unittest
-from unittest.mock import Mock
+
 from bs4 import BeautifulSoup
 from coreason_etl_euctr.parser import Parser
 
 
 class TestParserAgeGroups(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.parser = Parser()
 
-    def test_parse_age_groups_adults_only(self):
+    def test_parse_age_groups_adults_only(self) -> None:
         html = """
         <html>
         <body>
@@ -41,7 +41,7 @@ class TestParserAgeGroups(unittest.TestCase):
         groups = self.parser._parse_age_groups(soup)
         self.assertEqual(groups, ["Adults"])
 
-    def test_parse_age_groups_mixed(self):
+    def test_parse_age_groups_mixed(self) -> None:
         html = """
         <table>
             <tr><td>F.1.1</td><td>Adults</td><td>Yes</td></tr>
@@ -53,13 +53,13 @@ class TestParserAgeGroups(unittest.TestCase):
         groups = self.parser._parse_age_groups(soup)
         self.assertEqual(groups, ["Adults", "Preterm newborn infants"])
 
-    def test_parse_age_groups_none(self):
+    def test_parse_age_groups_none(self) -> None:
         html = "<html><body><p>No tables here</p></body></html>"
         soup = BeautifulSoup(html, "html.parser")
         groups = self.parser._parse_age_groups(soup)
         self.assertIsNone(groups)
 
-    def test_parse_age_groups_case_insensitive(self):
+    def test_parse_age_groups_case_insensitive(self) -> None:
         html = """
         <table>
             <tr><td>F.1.3</td><td>Elderly</td><td>YES</td></tr>
@@ -69,7 +69,7 @@ class TestParserAgeGroups(unittest.TestCase):
         groups = self.parser._parse_age_groups(soup)
         self.assertEqual(groups, ["Elderly"])
 
-    def test_parse_age_groups_edge_cases_structure(self):
+    def test_parse_age_groups_edge_cases_structure(self) -> None:
         """Test malformed HTML structures around 'Yes'."""
         html = """
         <div>Yes</div>
@@ -87,7 +87,7 @@ class TestParserAgeGroups(unittest.TestCase):
         groups = self.parser._parse_age_groups(soup)
         self.assertIsNone(groups)
 
-    def test_parse_age_groups_fallback_label(self):
+    def test_parse_age_groups_fallback_label(self) -> None:
         """Test fallback to first cell if second is empty."""
         # Compact HTML to ensure no parsing ambiguity
         # 3 cells. Middle is empty.
@@ -96,14 +96,14 @@ class TestParserAgeGroups(unittest.TestCase):
         groups = self.parser._parse_age_groups(soup)
         self.assertEqual(groups, ["Adults"])
 
-    def test_parse_age_groups_two_cells(self):
+    def test_parse_age_groups_two_cells(self) -> None:
         """Test row with exactly 2 cells (Label, Value)."""
         html = "<table><tr><td>Adults</td><td>Yes</td></tr></table>"
         soup = BeautifulSoup(html, "html.parser")
         groups = self.parser._parse_age_groups(soup)
         self.assertEqual(groups, ["Adults"])
 
-    def test_parse_age_groups_no_match(self):
+    def test_parse_age_groups_no_match(self) -> None:
         """Test row has 'Yes' but text doesn't match any known age group."""
         html = """
         <table>

@@ -223,7 +223,7 @@ class Pipeline:
 
                 def escape_pg_array_elem(s: str) -> str:
                     # Escape backslashes and double quotes
-                    return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
+                    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
                 array_str = "{" + ",".join(escape_pg_array_elem(str(x)) for x in v) + "}"
                 cleaned_row.append(array_str)
