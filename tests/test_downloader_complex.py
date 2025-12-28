@@ -92,12 +92,22 @@ def test_download_recovers_from_missing_meta(tmp_path: Path, mock_httpx_client: 
     assert "hash=" in meta_path.read_text(encoding="utf-8")
 
 
-def test_save_to_disk_partial_failure(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
+def test_save_to_disk_partial_failure(mock_httpx_client: MagicMock) -> None:
     """
     Test behavior when writing HTML succeeds but writing Meta fails.
-    Current behavior: Raises IOError, HTML left on disk.
+    Current behavior: Raises IOError, HTML left (but meta missing).
     """
-    downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
+    mock_storage = MagicMock()
+    mock_storage.exists.return_value = False
+
+    def side_effect_write(key: str, content: str) -> None:
+        if key.endswith(".meta"):
+            raise IOError("Disk Full on Meta")
+        return None
+
+    mock_storage.write.side_effect = side_effect_write
+
+    downloader = Downloader(storage_backend=mock_storage, client=mock_httpx_client)
     trial_id = "2023-003"
     content = "<html>Content</html>"
 
@@ -106,29 +116,10 @@ def test_save_to_disk_partial_failure(tmp_path: Path, mock_httpx_client: MagicMo
     mock_resp.text = content
     mock_httpx_client.get.return_value = mock_resp
 
-    # Mock open.
-    # The first open is for HTML (success), second is for Meta (fail).
-    # We use a side_effect on the mock returned by patch('builtins.open')
+    with patch("time.sleep"):
+        with pytest.raises(IOError, match="Disk Full on Meta"):
+            downloader.download_trial(trial_id)
 
-    # It's tricky to mock builtins.open sequentially for specific paths easily with simple side_effect list
-    # because open returns a context manager.
-    # Instead, we can mock the write to the meta file specifically if we know the path?
-    # Or just mock `open` to check the filename argument.
-
-    original_open = open
-
-    def side_effect_open(file: object, mode: str = "r", *args: object, **kwargs: object) -> object:
-        path_str = str(file)
-        if path_str.endswith(".meta"):
-            raise IOError("Disk Full on Meta")
-        return original_open(file, mode, *args, **kwargs)  # type: ignore[call-overload]
-
-    with patch("builtins.open", side_effect=side_effect_open):
-        with patch("time.sleep"):
-            with pytest.raises(IOError, match="Disk Full on Meta"):
-                downloader.download_trial(trial_id)
-
-    # Verify HTML exists (Partial state)
-    assert (tmp_path / f"{trial_id}.html").exists()
-    # Verify Meta does not exist
-    assert not (tmp_path / f"{trial_id}.meta").exists()
+    # Verify write was called for HTML and Meta
+    assert mock_storage.write.call_count == 2
+    mock_storage.write.assert_any_call(f"{trial_id}.html", content)

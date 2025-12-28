@@ -10,10 +10,11 @@
 
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from coreason_etl_euctr.main import StringIteratorIO, _load_table, hello_world, run_bronze, run_silver
+from coreason_etl_euctr.storage import LocalStorageBackend
 from pydantic import BaseModel
 
 
@@ -72,6 +73,26 @@ def test_run_bronze_no_hwm() -> None:
 
     # Verify Crawler called without date_from
     mock_crawler.fetch_search_page.assert_called_with(page_num=1, date_from=None)
+
+
+def test_run_bronze_default_downloader(tmp_path: Path) -> None:
+    """Test run_bronze initialization when no downloader provided."""
+    mock_crawler = MagicMock()
+    mock_crawler.extract_ids.return_value = []
+
+    # We pass downloader=None (default)
+    # output_dir should be used to create LocalStorageBackend
+    output_dir = tmp_path / "bronze"
+
+    with patch("coreason_etl_euctr.main.Downloader") as mock_downloader_cls:
+        run_bronze(output_dir=str(output_dir), crawler=mock_crawler)
+
+        mock_downloader_cls.assert_called_once()
+        # Verify call args: check if storage_backend was passed
+        _, kwargs = mock_downloader_cls.call_args
+        assert "storage_backend" in kwargs
+        assert isinstance(kwargs["storage_backend"], LocalStorageBackend)
+        assert kwargs["storage_backend"].base_path == output_dir
 
 
 def test_run_bronze_handles_crawl_exception() -> None:

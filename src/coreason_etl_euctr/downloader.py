@@ -11,10 +11,12 @@
 import hashlib
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import httpx
 from loguru import logger
+
+from coreason_etl_euctr.storage import LocalStorageBackend, StorageBackend
 
 
 class Downloader:
@@ -26,17 +28,28 @@ class Downloader:
     BASE_URL_TEMPLATE = "https://www.clinicaltrialsregister.eu/ctr-search/trial/{id}/{country}"
     COUNTRY_PRIORITY: List[str] = ["3rd", "GB", "DE"]
 
-    def __init__(self, output_dir: Path, client: Optional[httpx.Client] = None) -> None:
+    def __init__(
+        self,
+        output_dir: Optional[Union[str, Path]] = None,
+        client: Optional[httpx.Client] = None,
+        storage_backend: Optional[StorageBackend] = None,
+    ) -> None:
         """
         Initialize the Downloader.
 
         Args:
-            output_dir: The directory where raw HTML files will be saved.
+            output_dir: Legacy argument. Directory where raw HTML files will be saved.
+                        Used if storage_backend is not provided.
             client: Optional httpx.Client instance.
+            storage_backend: The storage backend to use (Local or S3).
+                             Takes precedence over output_dir.
         """
-        self.output_dir = output_dir
-        # Ensure output directory exists
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        if storage_backend:
+            self.storage = storage_backend
+        elif output_dir:
+            self.storage = LocalStorageBackend(Path(output_dir))
+        else:
+            raise ValueError("Either output_dir or storage_backend must be provided.")
 
         self.client = client or httpx.Client(
             headers={"User-Agent": "Coreason-ETL-Downloader/1.0"}, follow_redirects=True, timeout=30.0
@@ -76,7 +89,7 @@ class Downloader:
                     logger.warning(f"Trial {eudract_number} in {country} returned empty body.")
                     continue
 
-                self._save_to_disk(eudract_number, response.text, country)
+                self._save_content(eudract_number, response.text, country)
                 logger.info(f"Successfully downloaded trial {eudract_number} from {country}.")
                 return True
 
@@ -88,9 +101,9 @@ class Downloader:
         logger.error(f"Failed to download trial {eudract_number} from any source.")
         return False
 
-    def _save_to_disk(self, eudract_number: str, content: str, source_country: str) -> None:
+    def _save_content(self, eudract_number: str, content: str, source_country: str) -> None:
         """
-        Save the HTML content to the output directory.
+        Save the HTML content to the storage backend.
         Calculates and stores SHA-256 hash in metadata.
         Checks for existing hash to detect unchanged content.
 
@@ -100,16 +113,16 @@ class Downloader:
             source_country: The country code where it was found.
         """
         # Filename convention from FRD: 2015-001234-56.html
-        file_path = self.output_dir / f"{eudract_number}.html"
-        meta_path = self.output_dir / f"{eudract_number}.meta"
+        file_key = f"{eudract_number}.html"
+        meta_key = f"{eudract_number}.meta"
 
         # Calculate Hash (R.3.2.3)
         new_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
         # Check existing hash if meta exists
-        if meta_path.exists():
+        if self.storage.exists(meta_key):
             try:
-                existing_meta = meta_path.read_text(encoding="utf-8")
+                existing_meta = self.storage.read(meta_key)
                 # Simple parsing of key=value
                 meta_dict = {}
                 for line in existing_meta.splitlines():
@@ -121,7 +134,7 @@ class Downloader:
                     logger.info(f"Content for {eudract_number} is unchanged (Hash match).")
                     # Requirement R.3.2.3: Skip writing HTML to preserve idempotency/avoid IO.
                     # But we MUST update metadata to show we checked it (update downloaded_at).
-                    self._write_metadata(meta_path, source_country, eudract_number, new_hash)
+                    self._write_metadata(meta_key, source_country, eudract_number, new_hash)
                     return
             except Exception:
                 # Ignore read errors, just overwrite
@@ -129,19 +142,17 @@ class Downloader:
 
         # Write HTML
         try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(content)
+            self.storage.write(file_key, content)
+            self._write_metadata(meta_key, source_country, eudract_number, new_hash)
 
-            self._write_metadata(meta_path, source_country, eudract_number, new_hash)
-
-        except IOError as e:
+        except Exception as e:
             logger.error(f"Failed to write file for {eudract_number}: {e}")
             raise
 
-    def _write_metadata(self, meta_path: Path, source_country: str, eudract_number: str, file_hash: str) -> None:
+    def _write_metadata(self, meta_key: str, source_country: str, eudract_number: str, file_hash: str) -> None:
         """Helper to write the .meta sidecar file."""
         url = self.BASE_URL_TEMPLATE.format(id=eudract_number, country=source_country)
-        with open(meta_path, "w", encoding="utf-8") as f:
-            f.write(
-                f"source_country={source_country}\n" f"url={url}\n" f"downloaded_at={time.time()}\n" f"hash={file_hash}"
-            )
+        meta_content = (
+            f"source_country={source_country}\n" f"url={url}\n" f"downloaded_at={time.time()}\n" f"hash={file_hash}"
+        )
+        self.storage.write(meta_key, meta_content)
