@@ -8,9 +8,11 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, call
 
+import pytest
 from coreason_etl_euctr.main import StringIteratorIO, hello_world, run_bronze, run_silver
 from pydantic import BaseModel
 
@@ -20,24 +22,56 @@ def test_hello_world() -> None:
 
 
 def test_run_bronze_flow() -> None:
-    """Test the orchestration flow of run_bronze."""
+    """Test the orchestration flow of run_bronze with HWM logic."""
     mock_crawler = MagicMock()
     mock_downloader = MagicMock()
+    mock_pipeline = MagicMock()
+
+    # Setup HWM
+    mock_pipeline.get_high_water_mark.return_value = date(2023, 1, 1)
 
     # Setup mocks
     mock_crawler.fetch_search_page.return_value = "<html>...</html>"
     mock_crawler.extract_ids.side_effect = [["ID1", "ID2"], ["ID2", "ID3"]]  # Simulate duplicates across pages
     mock_downloader.download_trial.return_value = True
 
-    run_bronze(output_dir="tmp", start_page=1, max_pages=2, crawler=mock_crawler, downloader=mock_downloader)
+    run_bronze(
+        output_dir="tmp",
+        start_page=1,
+        max_pages=2,
+        crawler=mock_crawler,
+        downloader=mock_downloader,
+        pipeline=mock_pipeline,
+    )
 
-    # Verify Crawler calls
+    # Verify Crawler calls with date_from
     assert mock_crawler.fetch_search_page.call_count == 2
-    mock_crawler.fetch_search_page.assert_has_calls([call(page_num=1), call(page_num=2)])
+    mock_crawler.fetch_search_page.assert_has_calls(
+        [call(page_num=1, date_from="2023-01-01"), call(page_num=2, date_from="2023-01-01")]
+    )
 
     # Verify Deduplication (ID1, ID2, ID3 = 3 unique)
     assert mock_downloader.download_trial.call_count == 3
     mock_downloader.download_trial.assert_has_calls([call("ID1"), call("ID2"), call("ID3")], any_order=True)
+
+    # Verify HWM update
+    mock_pipeline.set_high_water_mark.assert_called_once()
+
+
+def test_run_bronze_no_hwm() -> None:
+    """Test run_bronze when no High-Water Mark is found (Full Crawl)."""
+    mock_crawler = MagicMock()
+    mock_downloader = MagicMock()
+    mock_pipeline = MagicMock()
+    mock_pipeline.get_high_water_mark.return_value = None
+
+    mock_crawler.fetch_search_page.return_value = "<html>...</html>"
+    mock_crawler.extract_ids.return_value = []
+
+    run_bronze(max_pages=1, crawler=mock_crawler, downloader=mock_downloader, pipeline=mock_pipeline)
+
+    # Verify Crawler called without date_from
+    mock_crawler.fetch_search_page.assert_called_with(page_num=1, date_from=None)
 
 
 def test_run_bronze_handles_crawl_exception() -> None:
@@ -73,8 +107,8 @@ class MockTrial(BaseModel):
     eudract_number: str
 
 
-def test_run_silver_flow(tmp_path: Path) -> None:
-    """Test the parsing and loading flow of run_silver."""
+def test_run_silver_full_load(tmp_path: Path) -> None:
+    """Test the parsing and FULL loading flow of run_silver."""
     # Create dummy bronze files
     d = tmp_path / "bronze"
     d.mkdir()
@@ -94,19 +128,49 @@ def test_run_silver_flow(tmp_path: Path) -> None:
     # Setup Pipeline returns
     mock_pipeline.stage_data.return_value = iter(["header\n", "row1\n"])
 
-    run_silver(input_dir=str(d), parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
-
-    # Verify Parser calls
-    mock_parser.parse_trial.assert_called()
+    run_silver(input_dir=str(d), mode="FULL", parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
 
     # Verify Loader calls
     mock_loader.connect.assert_called_once()
     mock_loader.prepare_schema.assert_called_once()
+    # FULL mode means truncate + bulk_load
+    mock_loader.truncate_tables.assert_called_once_with(["eu_trials"])
     # load_table calls bulk_load_stream.
     # Since drugs/conditions are empty, only trials should trigger load
     assert mock_loader.bulk_load_stream.call_count == 1
     mock_loader.commit.assert_called_once()
     mock_loader.close.assert_called_once()
+
+
+def test_run_silver_upsert_load(tmp_path: Path) -> None:
+    """Test the parsing and UPSERT loading flow of run_silver."""
+    d = tmp_path / "bronze"
+    d.mkdir()
+    p1 = d / "2015-001.html"
+    p1.write_text("content")
+
+    mock_parser = MagicMock()
+    trial_obj = MockTrial(eudract_number="2015-001")
+    mock_parser.parse_trial.return_value = trial_obj
+    mock_parser.parse_drugs.return_value = []
+    mock_parser.parse_conditions.return_value = []
+
+    mock_pipeline = MagicMock()
+    mock_pipeline.stage_data.return_value = iter(["header\n", "row1\n"])
+    mock_loader = MagicMock()
+
+    run_silver(input_dir=str(d), mode="UPSERT", parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
+
+    # Truncate should NOT be called
+    mock_loader.truncate_tables.assert_not_called()
+    # upsert_stream should be called
+    mock_loader.upsert_stream.assert_called()
+
+
+def test_run_silver_invalid_mode() -> None:
+    """Test ValueError on invalid mode."""
+    with pytest.raises(ValueError, match="Mode must be 'FULL' or 'UPSERT'"):
+        run_silver(mode="INVALID")
 
 
 def test_run_silver_id_mismatch(tmp_path: Path) -> None:

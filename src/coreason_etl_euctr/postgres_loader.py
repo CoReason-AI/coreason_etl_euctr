@@ -81,7 +81,8 @@ class PostgresLoader(BaseLoader):
                 drug_name VARCHAR(255),
                 active_ingredient VARCHAR(255),
                 cas_number VARCHAR(50),
-                pharmaceutical_form VARCHAR(255)
+                pharmaceutical_form VARCHAR(255),
+                CONSTRAINT uq_trial_drug UNIQUE (eudract_number, drug_name, pharmaceutical_form)
             );
             """,
             """
@@ -89,7 +90,8 @@ class PostgresLoader(BaseLoader):
                 id SERIAL PRIMARY KEY,
                 eudract_number VARCHAR(20) REFERENCES eu_trials(eudract_number),
                 condition_name TEXT,
-                meddra_code VARCHAR(50)
+                meddra_code VARCHAR(50),
+                CONSTRAINT uq_trial_condition UNIQUE (eudract_number, condition_name)
             );
             """,
         ]
