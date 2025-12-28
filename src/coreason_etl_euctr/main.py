@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+import argparse
 import io
 import os
 import sys
@@ -281,3 +282,37 @@ def hello_world() -> str:
     # Kept for backward compatibility with existing tests until removed
     logger.info("Hello World!")
     return "Hello World!"
+
+
+def main() -> int:
+    """
+    CLI Entry Point.
+    """
+    parser = argparse.ArgumentParser(description="Coreason ETL EU CTR Pipeline")
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
+
+    # Bronze / Crawl
+    parser_crawl = subparsers.add_parser("crawl", help="Run the Bronze layer (Crawler/Downloader)")
+    parser_crawl.add_argument("--output-dir", default="data/bronze", help="Directory to save HTML files")
+    parser_crawl.add_argument("--start-page", type=int, default=1, help="Page number to start crawling")
+    parser_crawl.add_argument("--max-pages", type=int, default=1, help="Number of pages to crawl")
+
+    # Silver / Load
+    parser_load = subparsers.add_parser("load", help="Run the Silver layer (Parser/Loader)")
+    parser_load.add_argument("--input-dir", default="data/bronze", help="Directory containing raw HTML files")
+    parser_load.add_argument("--mode", choices=["FULL", "UPSERT"], default="FULL", help="Loading mode")
+
+    args = parser.parse_args()
+
+    if args.command == "crawl":
+        run_bronze(output_dir=args.output_dir, start_page=args.start_page, max_pages=args.max_pages)
+    elif args.command == "load":
+        run_silver(input_dir=args.input_dir, mode=args.mode)
+    else:
+        parser.print_help()
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())  # pragma: no cover
