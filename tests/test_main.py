@@ -127,6 +127,7 @@ def test_run_silver_full_load(tmp_path: Path) -> None:
 
     # Setup Pipeline returns
     mock_pipeline.stage_data.return_value = iter(["header\n", "row1\n"])
+    mock_pipeline.get_silver_watermark.return_value = None  # New logic
 
     run_silver(input_dir=str(d), mode="FULL", parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
 
@@ -157,6 +158,7 @@ def test_run_silver_upsert_load(tmp_path: Path) -> None:
 
     mock_pipeline = MagicMock()
     mock_pipeline.stage_data.return_value = iter(["header\n", "row1\n"])
+    mock_pipeline.get_silver_watermark.return_value = None  # New logic
     mock_loader = MagicMock()
 
     run_silver(input_dir=str(d), mode="UPSERT", parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)

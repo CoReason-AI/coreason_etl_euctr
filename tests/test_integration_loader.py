@@ -135,7 +135,9 @@ def test_postgres_loader_full_lifecycle(db_loader: PostgresLoader) -> None:
             assert row == ("Phase 1 Study", "Pharma Corp")
 
             cur.execute("SELECT count(*) FROM eu_trial_drugs")
-            assert cur.fetchone()[0] == 1
+            row_count = cur.fetchone()
+            assert row_count is not None
+            assert row_count[0] == 1
 
         # --- Phase 2: UPSERT ---
         # Update Trial Title and Add a new Drug
@@ -168,11 +170,15 @@ def test_postgres_loader_full_lifecycle(db_loader: PostgresLoader) -> None:
         with db_loader.conn.cursor() as cur:  # type: ignore
             # Check updated title
             cur.execute("SELECT trial_title FROM eu_trials WHERE eudract_number = '2024-001'")
-            assert cur.fetchone()[0] == "Phase 1 Study (Revised)"
+            row_title = cur.fetchone()
+            assert row_title is not None
+            assert row_title[0] == "Phase 1 Study (Revised)"
 
             # Check drugs count (should be 2 now)
             cur.execute("SELECT count(*) FROM eu_trial_drugs")
-            assert cur.fetchone()[0] == 2
+            row_count = cur.fetchone()
+            assert row_count is not None
+            assert row_count[0] == 2
 
             # Check verify specific drugs
             cur.execute("SELECT drug_name FROM eu_trial_drugs WHERE eudract_number = '2024-001' ORDER BY drug_name")
@@ -219,7 +225,9 @@ def test_postgres_loader_complex_cases(db_loader: PostgresLoader) -> None:
         # Verify Unicode
         with db_loader.conn.cursor() as cur:  # type: ignore
             cur.execute("SELECT trial_title FROM eu_trials WHERE eudract_number = %s", (unicode_id,))
-            fetched_title = cur.fetchone()[0]
+            row_uni = cur.fetchone()
+            assert row_uni is not None
+            fetched_title = row_uni[0]
             assert fetched_title == special_title
 
         # 2. Null Handling
@@ -238,6 +246,7 @@ def test_postgres_loader_complex_cases(db_loader: PostgresLoader) -> None:
         with db_loader.conn.cursor() as cur:  # type: ignore
             cur.execute("SELECT sponsor_name, start_date FROM eu_trials WHERE eudract_number = %s", (null_id,))
             row = cur.fetchone()
+            assert row is not None
             assert row[0] is None
             assert row[1] is None
 
@@ -264,7 +273,9 @@ def test_postgres_loader_complex_cases(db_loader: PostgresLoader) -> None:
         # Verify data is unchanged (unicode_id still has original title)
         with db_loader.conn.cursor() as cur:  # type: ignore
             cur.execute("SELECT trial_title FROM eu_trials WHERE eudract_number = %s", (unicode_id,))
-            assert cur.fetchone()[0] == special_title
+            row_rb = cur.fetchone()
+            assert row_rb is not None
+            assert row_rb[0] == special_title
 
         # 4. Upsert Idempotency
         # Re-run upsert with the exact same data for unicode_id
@@ -278,7 +289,9 @@ def test_postgres_loader_complex_cases(db_loader: PostgresLoader) -> None:
                 "SELECT count(*), trial_title FROM eu_trials WHERE eudract_number = %s GROUP BY trial_title",
                 (unicode_id,),
             )
-            count, title = cur.fetchone()
+            row_idemp = cur.fetchone()
+            assert row_idemp is not None
+            count, title = row_idemp
             assert count == 1
             assert title == special_title
 

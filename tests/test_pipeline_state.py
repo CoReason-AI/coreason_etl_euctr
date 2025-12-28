@@ -149,3 +149,21 @@ def test_save_state_generic_error(temp_state_file: Path) -> None:
     with patch("pathlib.Path.open", side_effect=PermissionError("Boom")):
         # Should catch error and log it, not raise
         pipeline.save_state({"a": 1})
+
+
+def test_get_silver_watermark_invalid_type(temp_state_file: Path) -> None:
+    """Test getting silver watermark when value is invalid."""
+    data = {"silver_last_run": "not-a-float"}
+    temp_state_file.write_text(json.dumps(data))
+
+    pipeline = Pipeline(state_file=temp_state_file)
+    assert pipeline.get_silver_watermark() is None
+
+
+def test_get_silver_watermark_none(temp_state_file: Path) -> None:
+    """Test getting silver watermark when it's not set (None)."""
+    pipeline = Pipeline(state_file=temp_state_file)
+    if temp_state_file.exists():
+        temp_state_file.unlink()
+
+    assert pipeline.get_silver_watermark() is None
