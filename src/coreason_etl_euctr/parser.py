@@ -58,12 +58,16 @@ class Parser:
         if not trial_status:
             trial_status = extract_field_by_label(soup, "Status of the trial")
 
+        # 6. Age Groups (Section F)
+        age_groups = self._parse_age_groups(soup)
+
         return EuTrial(
             eudract_number=eudract_number,
             sponsor_name=sponsor_name,
             trial_title=trial_title,
             start_date=start_date,
             trial_status=trial_status,
+            age_groups=age_groups,
             url_source=url_source,
         )
 
@@ -208,3 +212,106 @@ class Parser:
             date_str = extract_field_by_label(soup, "Date record first entered")
 
         return parse_flexible_date(date_str)
+
+    def _parse_age_groups(self, soup: BeautifulSoup) -> Optional[List[str]]:
+        """
+        Parse Section F to extract population age groups.
+        Looks for affirmative indicators (Yes) next to age labels.
+        """
+        # Common labels in Section F
+        # F.1.1 Adults (18-64 years)
+        # F.1.2 Children (2-11 years)
+        # F.1.2.1 Preterm newborn infants
+        # ...
+        # Structure is typically:
+        # <tr>
+        #   <td>F.1.1</td>
+        #   <td>Adults (18-64 years)</td>
+        #   <td>Yes</td>
+        # </tr>
+
+        # We search for the specific codes or labels
+        age_map = {
+            "F.1.1": "Adults",
+            "F.1.2": "Children", # This is often a header for sub-groups, but sometimes checked itself?
+            "F.1.3": "Elderly",
+            # Sub groups
+            "F.1.2.1": "Preterm newborn infants",
+            "F.1.2.2": "Newborns",
+            "F.1.2.3": "Infants and toddlers",
+            "F.1.2.4": "Children", # 2-11
+            "F.1.2.5": "Adolescents",
+        }
+
+        # We can also search by text if codes vary (different versions of form).
+        # Let's try to find rows where the 3rd column (Value) is "Yes".
+
+        found_groups = []
+
+        # Find all "Yes" strings
+        yes_nodes = soup.find_all(string=lambda text: text and text.strip().lower() == "yes")
+
+        for node in yes_nodes:
+            # Check parent cell
+            cell = node.parent
+            if not cell or cell.name != "td":
+                continue
+
+            row = cell.parent
+            if not row or row.name != "tr":
+                continue
+
+            # Get cells in row
+            cells = row.find_all("td")
+            if len(cells) < 2:
+                continue
+
+            # Usually: Code | Label | Value
+            # Or: Label | Value
+
+            # Check if this row matches an age group
+            row_text = row.get_text(" ", strip=True)
+
+            # Simple heuristic: Check if row contains known age keywords
+            # and the "Yes" we found is in the value column.
+
+            # Refined strategy:
+            # 1. Identify if we are in Section F (Population).
+            # 2. Iterate rows of that table.
+
+            # Let's try to find the "Population" table first?
+            # Or just rely on row content.
+
+            # If "Yes" is found, check the label in the same row.
+            label_text = ""
+            if len(cells) >= 3:
+                 # Assume col 1 is label or col 0 is code and col 1 is label
+                 label_text = cells[1].get_text(strip=True) or cells[0].get_text(strip=True)
+            elif len(cells) == 2:
+                label_text = cells[0].get_text(strip=True)
+
+            # Clean label (remove code F.1.1 etc)
+            # "F.1.1 Adults (18-64 years)" -> "Adults (18-64 years)"
+
+            # Check if this label looks like an age group
+            # We can use the age_map keys or values
+
+            match = False
+            # Sort keys by length descending to match F.1.2.1 before F.1.2
+            sorted_codes = sorted(age_map.keys(), key=len, reverse=True)
+
+            for code in sorted_codes:
+                name = age_map[code]
+                if code in row_text or name in row_text:
+                    # found a match
+                    # Normalize name
+                    found_groups.append(name)
+                    match = True
+                    break
+
+            if not match:
+                # If we didn't match a specific code, but the section header is Population, maybe add it?
+                # For now, restrict to known list to avoid noise.
+                pass
+
+        return sorted(list(set(found_groups))) if found_groups else None
