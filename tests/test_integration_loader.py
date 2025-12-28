@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+import io
 from datetime import date
 from typing import Generator
 
@@ -112,8 +113,6 @@ def test_postgres_loader_full_lifecycle(db_loader: PostgresLoader) -> None:
         # We need to adapt generator to stream.
         # Since we don't have the StringIteratorIO available (it's in main.py, not exported?),
         # we can just use io.StringIO for small data in tests.
-        import io
-
         stream_trials = io.StringIO("".join(gen_trials))
         db_loader.bulk_load_stream(stream_trials, "eu_trials")
 
@@ -179,6 +178,109 @@ def test_postgres_loader_full_lifecycle(db_loader: PostgresLoader) -> None:
             cur.execute("SELECT drug_name FROM eu_trial_drugs WHERE eudract_number = '2024-001' ORDER BY drug_name")
             drugs = [r[0] for r in cur.fetchall()]
             assert drugs == ["Placebo", "WonderDrug"]
+
+    finally:
+        db_loader.close()
+
+
+def test_postgres_loader_complex_cases(db_loader: PostgresLoader) -> None:
+    """
+    Validates complex scenarios:
+    1. Unicode / Special Characters.
+    2. Null Handling.
+    3. Transaction Rollback on Failure.
+    4. Upsert Idempotency.
+    """
+    pipeline = Pipeline()
+    db_loader.connect()
+
+    try:
+        # Ensure schema is fresh-ish (though we reuse the DB from previous test)
+        # We'll use new IDs to avoid conflicts with previous test
+        db_loader.prepare_schema()
+
+        # 1. Unicode & Special Chars
+        unicode_id = "UNI-001"
+        # Includes Emoji, Chinese, Quotes, SQL injection attempt
+        special_title = "Study of 🚀 & 测试 ' OR 1=1; --"
+        trial_unicode = EuTrial(
+            eudract_number=unicode_id,
+            sponsor_name="International 🌍 Corp",
+            trial_title=special_title,
+            start_date=date(2025, 1, 1),
+            trial_status="Active",
+            url_source="http://example.com/unicode",
+        )
+
+        gen_uni = pipeline.stage_data([trial_unicode])
+        db_loader.bulk_load_stream(io.StringIO("".join(gen_uni)), "eu_trials")
+        db_loader.commit()
+
+        # Verify Unicode
+        with db_loader.conn.cursor() as cur:  # type: ignore
+            cur.execute("SELECT trial_title FROM eu_trials WHERE eudract_number = %s", (unicode_id,))
+            fetched_title = cur.fetchone()[0]
+            assert fetched_title == special_title
+
+        # 2. Null Handling
+        # Create a trial with minimal required fields, everything else None
+        null_id = "NULL-001"
+        trial_null = EuTrial(eudract_number=null_id, url_source="http://example.com/null")
+        # Ensure other fields are None (pydantic default)
+        assert trial_null.sponsor_name is None
+        assert trial_null.start_date is None
+
+        gen_null = pipeline.stage_data([trial_null])
+        db_loader.bulk_load_stream(io.StringIO("".join(gen_null)), "eu_trials")
+        db_loader.commit()
+
+        # Verify Nulls
+        with db_loader.conn.cursor() as cur:  # type: ignore
+            cur.execute("SELECT sponsor_name, start_date FROM eu_trials WHERE eudract_number = %s", (null_id,))
+            row = cur.fetchone()
+            assert row[0] is None
+            assert row[1] is None
+
+        # 3. Transaction Rollback
+        # We attempt to insert a row that violates the PK constraint (using existing ID) via bulk load.
+        # Note: COPY might abort the transaction.
+        # We need a new transaction.
+        bad_trial = EuTrial(
+            eudract_number=unicode_id,  # Duplicate!
+            url_source="http://fail.com",
+        )
+        gen_bad = pipeline.stage_data([bad_trial])
+
+        import psycopg
+
+        with pytest.raises(psycopg.Error):
+            # This should fail
+            db_loader.bulk_load_stream(io.StringIO("".join(gen_bad)), "eu_trials")
+            # If bulk_load_stream doesn't raise immediately (it should), commit will
+            db_loader.commit()
+
+        db_loader.rollback()
+
+        # Verify data is unchanged (unicode_id still has original title)
+        with db_loader.conn.cursor() as cur:  # type: ignore
+            cur.execute("SELECT trial_title FROM eu_trials WHERE eudract_number = %s", (unicode_id,))
+            assert cur.fetchone()[0] == special_title
+
+        # 4. Upsert Idempotency
+        # Re-run upsert with the exact same data for unicode_id
+        gen_idempotent = pipeline.stage_data([trial_unicode])
+        db_loader.upsert_stream(io.StringIO("".join(gen_idempotent)), "eu_trials", conflict_keys=["eudract_number"])
+        db_loader.commit()
+
+        # Verify nothing changed (count is still 1 for this ID, title is same)
+        with db_loader.conn.cursor() as cur:  # type: ignore
+            cur.execute(
+                "SELECT count(*), trial_title FROM eu_trials WHERE eudract_number = %s GROUP BY trial_title",
+                (unicode_id,),
+            )
+            count, title = cur.fetchone()
+            assert count == 1
+            assert title == special_title
 
     finally:
         db_loader.close()
