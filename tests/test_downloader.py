@@ -123,9 +123,6 @@ def test_download_hashing_cdc(tmp_path: Path, mock_httpx_client: MagicMock) -> N
         assert meta.exists()
         assert "hash=" in meta.read_text(encoding="utf-8")
 
-        # Capture old modification time
-        old_mtime = meta.stat().st_mtime
-
         # Ensure minimal delay for timestamp difference (if filesystem resolution allows)
         # But we mock time.time in _save_to_disk? No, we call time.time() directly.
         # Let's rely on checking logs or content updates.
@@ -139,7 +136,6 @@ def test_download_hashing_cdc(tmp_path: Path, mock_httpx_client: MagicMock) -> N
         # But we added logic to DETECT it.
 
         assert downloader.download_trial("123")
-        new_mtime = meta.stat().st_mtime
 
         # Metadata should be updated/overwritten
         # Depending on FS resolution, mtime might be same if fast.

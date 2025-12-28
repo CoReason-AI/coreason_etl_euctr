@@ -11,13 +11,15 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 import httpx
+import pytest
 from coreason_etl_euctr.downloader import Downloader
+
 
 @pytest.fixture  # type: ignore[misc]
 def mock_httpx_client() -> MagicMock:
     return MagicMock(spec=httpx.Client)
+
 
 def test_download_hashing_cdc_corrupted_meta(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
     """Test that corrupted metadata file is ignored."""
@@ -31,7 +33,7 @@ def test_download_hashing_cdc_corrupted_meta(tmp_path: Path, mock_httpx_client: 
     # Create corrupted meta file
     meta = tmp_path / "123.meta"
     with open(meta, "wb") as f:
-        f.write(b"\x80\x81\xFF") # invalid utf-8
+        f.write(b"\x80\x81\xff")  # invalid utf-8
 
     with patch("time.sleep"):
         downloader.download_trial("123")
