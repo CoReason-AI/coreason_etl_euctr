@@ -199,9 +199,7 @@ def run_silver(
         else:
             logger.info("Running UPSERT load...")
             # R.5.1.2: Upsert logic
-            _load_table(
-                loader, pipeline, trials, "eu_trials", mode="UPSERT", conflict_keys=["eudract_number"]
-            )
+            _load_table(loader, pipeline, trials, "eu_trials", mode="UPSERT", conflict_keys=["eudract_number"])
             # For children, we also use upsert now that we have unique constraints
             _load_table(
                 loader,
