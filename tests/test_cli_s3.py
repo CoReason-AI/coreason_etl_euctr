@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+from typing import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,12 +17,12 @@ from coreason_etl_euctr.storage import LocalStorageBackend, S3StorageBackend
 
 
 @pytest.fixture
-def mock_run_bronze():
+def mock_run_bronze() -> Generator[MagicMock, None, None]:
     with patch("coreason_etl_euctr.main.run_bronze") as mock:
         yield mock
 
 
-def test_cli_crawl_defaults_to_local(mock_run_bronze, monkeypatch):
+def test_cli_crawl_defaults_to_local(mock_run_bronze: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that without S3 args, LocalStorageBackend is used."""
     # Ensure no env vars interfere
     monkeypatch.delenv("EUCTR_S3_BUCKET", raising=False)
@@ -33,22 +34,17 @@ def test_cli_crawl_defaults_to_local(mock_run_bronze, monkeypatch):
     kwargs = mock_run_bronze.call_args.kwargs
 
     # Verify storage_backend is LocalStorageBackend (or None, triggering default in run_bronze)
-    # Actually, if main instantiates it, it should be passed.
+    # If main instantiates it, it should be passed.
     # If main doesn't, run_bronze uses default.
-    # We want main to explicitly handle storage now.
-
-    # If our implementation passes it:
+    # We expect None based on current main implementation when no S3 args provided
     if "storage_backend" in kwargs and kwargs["storage_backend"]:
         assert isinstance(kwargs["storage_backend"], LocalStorageBackend)
     else:
-        # If passed via downloader?
-        # Current main.py doesn't create downloader, run_bronze does.
-        # So check if we passed storage_backend arg (which we plan to add)
-        # or if we passed nothing and let run_bronze default.
+        # This path is also valid if main passes None for local
         pass
 
 
-def test_cli_crawl_s3_args(mock_run_bronze, monkeypatch):
+def test_cli_crawl_s3_args(mock_run_bronze: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that --s3-bucket triggers S3StorageBackend."""
     monkeypatch.delenv("EUCTR_S3_BUCKET", raising=False)
 
@@ -66,7 +62,7 @@ def test_cli_crawl_s3_args(mock_run_bronze, monkeypatch):
     assert backend.prefix == "raw"
 
 
-def test_cli_crawl_s3_env_vars(mock_run_bronze, monkeypatch):
+def test_cli_crawl_s3_env_vars(mock_run_bronze: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that EUCTR_S3_BUCKET triggers S3StorageBackend."""
     monkeypatch.setenv("EUCTR_S3_BUCKET", "env-bucket")
     monkeypatch.setenv("EUCTR_S3_REGION", "us-east-1")
@@ -82,12 +78,9 @@ def test_cli_crawl_s3_env_vars(mock_run_bronze, monkeypatch):
     backend = kwargs["storage_backend"]
     assert isinstance(backend, S3StorageBackend)
     assert backend.bucket_name == "env-bucket"
-    # Verify region was passed to boto3 client creation?
-    # S3StorageBackend doesn't expose client config easily, but we can check attributes if we store them
-    # or trust the instantiation logic.
 
 
-def test_cli_crawl_s3_cli_overrides_env(mock_run_bronze, monkeypatch):
+def test_cli_crawl_s3_cli_overrides_env(mock_run_bronze: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that CLI args override Environment Variables."""
     monkeypatch.setenv("EUCTR_S3_BUCKET", "env-bucket")
 

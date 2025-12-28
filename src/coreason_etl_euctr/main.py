@@ -373,10 +373,7 @@ def main() -> int:
     if args.command == "crawl":
         storage = _get_storage_backend(args)
         run_bronze(
-            output_dir=args.output_dir,
-            start_page=args.start_page,
-            max_pages=args.max_pages,
-            storage_backend=storage
+            output_dir=args.output_dir, start_page=args.start_page, max_pages=args.max_pages, storage_backend=storage
         )
     elif args.command == "load":
         # Guardrail for unimplemented S3 Silver
