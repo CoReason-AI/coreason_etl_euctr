@@ -150,7 +150,7 @@ class Pipeline:
         # Extract headers
         # We use model_dump(mode='json') keys or model_fields.
         # model.model_fields.keys() gives strict schema fields.
-        headers = list(first_item.model_fields.keys())
+        headers = list(type(first_item).model_fields.keys())
         writer.writerow(headers)
         yield output.getvalue()
         output.seek(0)
