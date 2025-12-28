@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from unittest.mock import patch
+
 import pytest
 from coreason_etl_euctr.main import main
 
@@ -38,14 +39,14 @@ def test_cli_nonexistent_input_dir() -> None:
     """
     with patch("sys.argv", ["euctr-etl", "load", "--input-dir", "/non/existent/path"]):
         with patch("coreason_etl_euctr.main.run_silver") as mock_run:
-             # We want to actually CALL run_silver's logic?
-             # No, run_silver logic is tested in test_main.py.
-             # Here we test that CLI passes arguments correctly.
-             # But if we want to test "handling", we rely on unit tests.
-             # Let's just verify invocation here.
-             ret = main()
-             assert ret == 0
-             mock_run.assert_called_with(input_dir="/non/existent/path", mode="FULL")
+            # We want to actually CALL run_silver's logic?
+            # No, run_silver logic is tested in test_main.py.
+            # Here we test that CLI passes arguments correctly.
+            # But if we want to test "handling", we rely on unit tests.
+            # Let's just verify invocation here.
+            ret = main()
+            assert ret == 0
+            mock_run.assert_called_with(input_dir="/non/existent/path", mode="FULL")
 
 
 def test_cli_unknown_command() -> None:

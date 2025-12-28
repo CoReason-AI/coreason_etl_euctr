@@ -117,11 +117,11 @@ def test_save_to_disk_partial_failure(tmp_path: Path, mock_httpx_client: MagicMo
 
     original_open = open
 
-    def side_effect_open(file, mode="r", *args, **kwargs):
+    def side_effect_open(file: object, mode: str = "r", *args: object, **kwargs: object) -> object:
         path_str = str(file)
         if path_str.endswith(".meta"):
             raise IOError("Disk Full on Meta")
-        return original_open(file, mode, *args, **kwargs)
+        return original_open(file, mode, *args, **kwargs)  # type: ignore[call-overload]
 
     with patch("builtins.open", side_effect=side_effect_open):
         with patch("time.sleep"):
