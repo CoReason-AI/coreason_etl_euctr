@@ -64,13 +64,6 @@ def test_s3_storage_forbidden_error(monkeypatch: pytest.MonkeyPatch) -> None:
         backend.read("secret.txt")
 
     # Mock 403 on Exists
-    # Currently exists() catches 404, but re-raises others?
-    # Let's check implementation.
-    # storage.py:
-    # except ClientError as e:
-    #     if e.response["Error"]["Code"] == "404": return False
-    #     return False  # It returns False for ANY ClientError in exists()!
-
     mock_client.head_object.side_effect = ClientError(error_403, "HeadObject")
     assert backend.exists("secret.txt") is False
 
@@ -86,9 +79,7 @@ def test_s3_storage_empty_and_large_content(monkeypatch: pytest.MonkeyPatch) -> 
 
     # Empty Content
     backend.write("empty.txt", "")
-    mock_client.put_object.assert_called_with(
-        Bucket="bucket", Key="empty.txt", Body=b"", ContentType="text/html"
-    )
+    mock_client.put_object.assert_called_with(Bucket="bucket", Key="empty.txt", Body=b"", ContentType="text/html")
 
     # Large Content
     large_content = "A" * 10_000
@@ -96,3 +87,20 @@ def test_s3_storage_empty_and_large_content(monkeypatch: pytest.MonkeyPatch) -> 
     mock_client.put_object.assert_called_with(
         Bucket="bucket", Key="large.txt", Body=large_content.encode("utf-8"), ContentType="text/html"
     )
+
+
+def test_s3_storage_bad_encoding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test S3 read failure when content is not valid UTF-8."""
+    mock_boto3 = MagicMock()
+    mock_client = MagicMock()
+    mock_boto3.client.return_value = mock_client
+    monkeypatch.setattr("coreason_etl_euctr.storage.boto3", mock_boto3)
+
+    backend = S3StorageBackend(bucket_name="bucket")
+
+    # Return invalid bytes
+    mock_response = {"Body": MagicMock(read=lambda: b"\x80\x81\xff")}
+    mock_client.get_object.return_value = mock_response
+
+    with pytest.raises(UnicodeDecodeError):
+        backend.read("bad_encoding.txt")
