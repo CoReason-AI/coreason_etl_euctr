@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from datetime import date, datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,7 @@ class EuTrial(BaseModel):
         None, description="Date of Competent Authority Decision or Date record first entered."
     )
     trial_status: Optional[str] = Field(None, description="Status of the trial (e.g., Completed, Prematurely Ended).")
+    age_groups: Optional[List[str]] = Field(None, description="List of age groups (Section F).")
     url_source: str = Field(..., description="The source URL from which this record was scraped.")
     last_updated: datetime = Field(
         default_factory=datetime.now, description="Timestamp when this record was processed."
