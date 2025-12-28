@@ -13,7 +13,6 @@ from datetime import date, datetime
 from typing import Optional, Union
 
 from bs4 import BeautifulSoup, Tag
-from loguru import logger
 
 
 def clean_text(text: str) -> str:
@@ -110,5 +109,6 @@ def parse_flexible_date(date_str: Optional[str]) -> Optional[date]:
     except ValueError:
         pass
 
-    logger.warning(f"Could not parse date: {date_str}")
-    return None
+    # Requirement R.4.4.3: Robust Date Normalization
+    # Raise ValueError for malformed dates to allow row rejection
+    raise ValueError(f"Could not parse date: {date_str}")

@@ -103,7 +103,7 @@ def test_parse_trial_nested_structure() -> None:
 
 
 def test_parse_trial_invalid_date() -> None:
-    """Test graceful handling of invalid dates."""
+    """Test strict handling of invalid dates (should raise ValueError)."""
     html = """
     <table>
         <tr><td>EudraCT Number:</td><td>2023-123</td></tr>
@@ -114,10 +114,8 @@ def test_parse_trial_invalid_date() -> None:
     </table>
     """
     parser = Parser()
-    trial = parser.parse_trial(html, "http://source.url")
-
-    assert trial.eudract_number == "2023-123"
-    assert trial.start_date is None
+    with pytest.raises(ValueError, match="Could not parse date"):
+        parser.parse_trial(html, "http://source.url")
 
 
 def test_parse_trial_whitespace_cleaning() -> None:

@@ -76,6 +76,8 @@ class Pipeline:
 
             with temp_file.open("w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2, ensure_ascii=False)
+                # Ensure trailing newline for pre-commit compliance
+                f.write("\n")
 
             # Atomic rename
             temp_file.replace(self.state_file)
