@@ -121,6 +121,34 @@ class Pipeline:
         state["last_updated"] = new_date.isoformat()
         self.save_state(state)
 
+    def get_silver_watermark(self) -> Optional[float]:
+        """
+        Get the last Silver run timestamp (epoch seconds) from the state.
+
+        Returns:
+            The float timestamp, or None if not set.
+        """
+        state = self.load_state()
+        val = state.get("silver_last_run")
+        if val is None:
+            return None
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid timestamp in silver_last_run: {val}")
+            return None
+
+    def set_silver_watermark(self, timestamp: float) -> None:
+        """
+        Update the Silver run timestamp.
+
+        Args:
+            timestamp: The epoch timestamp.
+        """
+        state = self.load_state()
+        state["silver_last_run"] = timestamp
+        self.save_state(state)
+
     def stage_data(self, models: Iterable[BaseModel]) -> Generator[str, None, None]:
         """
         Convert a stream of Pydantic models into a CSV stream.
