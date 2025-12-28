@@ -7,6 +7,9 @@ license = "Prosperity-3.0"
 readme = "README.md"
 packages = [{include = "coreason_etl_euctr", from = "src"}]
 
+[tool.poetry.scripts]
+euctr-etl = "coreason_etl_euctr.main:main"
+
 [tool.poetry.dependencies]
 python = ">=3.12, <3.15"
 loguru = "^0.7.2"

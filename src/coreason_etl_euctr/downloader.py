@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+import hashlib
 import time
 from pathlib import Path
 from typing import List, Optional
@@ -90,14 +91,41 @@ class Downloader:
     def _save_to_disk(self, eudract_number: str, content: str, source_country: str) -> None:
         """
         Save the HTML content to the output directory.
+        Calculates and stores SHA-256 hash in metadata.
+        Checks for existing hash to detect unchanged content.
 
         Args:
             eudract_number: The trial ID.
             content: The HTML content.
-            source_country: The country code where it was found (useful for metadata if we wanted to store it).
+            source_country: The country code where it was found.
         """
         # Filename convention from FRD: 2015-001234-56.html
         file_path = self.output_dir / f"{eudract_number}.html"
+        meta_path = self.output_dir / f"{eudract_number}.meta"
+
+        # Calculate Hash (R.3.2.3)
+        new_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+        # Check existing hash if meta exists
+        if meta_path.exists():
+            try:
+                existing_meta = meta_path.read_text(encoding="utf-8")
+                # Simple parsing of key=value
+                meta_dict = {}
+                for line in existing_meta.splitlines():
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        meta_dict[k.strip()] = v.strip()
+
+                if meta_dict.get("hash") == new_hash:
+                    logger.info(f"Content for {eudract_number} is unchanged (Hash match).")
+                    # We still update metadata timestamp? Or keep it?
+                    # Usually "last_seen" might be updated.
+                    # But if we skip parsing, we need to know it is unchanged.
+                    # We will update metadata to reflect latest download attempt time.
+            except Exception:
+                # Ignore read errors, just overwrite
+                pass
 
         # Write HTML
         try:
@@ -105,10 +133,14 @@ class Downloader:
                 f.write(content)
 
             # Sidecar for metadata
-            meta_path = self.output_dir / f"{eudract_number}.meta"
             url = self.BASE_URL_TEMPLATE.format(id=eudract_number, country=source_country)
             with open(meta_path, "w", encoding="utf-8") as f:
-                f.write(f"source_country={source_country}\nurl={url}\ndownloaded_at={time.time()}")
+                f.write(
+                    f"source_country={source_country}\n"
+                    f"url={url}\n"
+                    f"downloaded_at={time.time()}\n"
+                    f"hash={new_hash}"
+                )
 
         except IOError as e:
             logger.error(f"Failed to write file for {eudract_number}: {e}")
