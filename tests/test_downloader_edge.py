@@ -22,7 +22,7 @@ def mock_httpx_client() -> MagicMock:
 
 
 def test_download_hashing_cdc_corrupted_meta(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
-    """Test that corrupted metadata file is ignored."""
+    """Test that corrupted metadata file (invalid UTF-8) is ignored."""
     downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
 
     mock_resp = MagicMock()
@@ -40,3 +40,43 @@ def test_download_hashing_cdc_corrupted_meta(tmp_path: Path, mock_httpx_client: 
 
     # Should proceed and overwrite
     assert meta.read_text(encoding="utf-8").startswith("source_country=")
+
+
+def test_download_hashing_cdc_malformed_meta_content(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
+    """Test that metadata with valid UTF-8 but invalid format is handled."""
+    downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = "New Content"
+    mock_httpx_client.get.return_value = mock_resp
+
+    # Create malformed meta (no key=value pairs)
+    meta = tmp_path / "456.meta"
+    meta.write_text("This is not a valid meta file format", encoding="utf-8")
+
+    with patch("time.sleep"):
+        downloader.download_trial("456")
+
+    # Should overwrite
+    content = meta.read_text(encoding="utf-8")
+    assert "hash=" in content
+    assert "source_country=" in content
+
+
+def test_download_storage_permission_error(mock_httpx_client: MagicMock) -> None:
+    """Test that PermissionError (subclass of OSError/Exception) is caught and raised."""
+    mock_storage = MagicMock()
+    mock_storage.exists.return_value = False
+    mock_storage.write.side_effect = PermissionError("Access Denied")
+
+    downloader = Downloader(storage_backend=mock_storage, client=mock_httpx_client)
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = "Content"
+    mock_httpx_client.get.return_value = mock_resp
+
+    with patch("time.sleep"):
+        with pytest.raises(PermissionError):
+            downloader.download_trial("789")
