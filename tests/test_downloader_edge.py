@@ -22,7 +22,7 @@ def mock_httpx_client() -> MagicMock:
 
 
 def test_download_hashing_cdc_corrupted_meta(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
-    """Test that corrupted metadata file is ignored."""
+    """Test that corrupted metadata file (invalid UTF-8) is ignored."""
     downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
 
     mock_resp = MagicMock()
@@ -40,3 +40,73 @@ def test_download_hashing_cdc_corrupted_meta(tmp_path: Path, mock_httpx_client: 
 
     # Should proceed and overwrite
     assert meta.read_text(encoding="utf-8").startswith("source_country=")
+
+
+def test_download_hashing_cdc_malformed_meta_content(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
+    """Test that metadata with valid UTF-8 but invalid format is handled."""
+    downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = "New Content"
+    mock_httpx_client.get.return_value = mock_resp
+
+    # Create malformed meta (no key=value pairs)
+    meta = tmp_path / "456.meta"
+    meta.write_text("This is not a valid meta file format", encoding="utf-8")
+
+    with patch("time.sleep"):
+        downloader.download_trial("456")
+
+    # Should overwrite
+    content = meta.read_text(encoding="utf-8")
+    assert "hash=" in content
+    assert "source_country=" in content
+
+
+def test_download_storage_permission_error(mock_httpx_client: MagicMock) -> None:
+    """Test that PermissionError (subclass of OSError/Exception) is caught and raised."""
+    mock_storage = MagicMock()
+    mock_storage.exists.return_value = False
+    mock_storage.write.side_effect = PermissionError("Access Denied")
+
+    downloader = Downloader(storage_backend=mock_storage, client=mock_httpx_client)
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = "Content"
+    mock_httpx_client.get.return_value = mock_resp
+
+    with patch("time.sleep"):
+        with pytest.raises(PermissionError):
+            downloader.download_trial("789")
+
+
+def test_downloader_redirects(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
+    """Test that the downloader logic interacts correctly with a client configured for redirects."""
+    # Note: Downloader uses the injected client. The client's redirect behavior
+    # (follow_redirects=True) is set in __init__ if no client is provided.
+    # Here we simulate the client logic or just verify the call.
+
+    downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
+
+    # 301 Redirect to 200 OK
+    mock_resp_301 = MagicMock()
+    mock_resp_301.status_code = 301
+    mock_resp_301.next_request = MagicMock()  # httpx follows if configured
+    # But if we mock get, it returns immediately.
+    # The Downloader logic itself relies on httpx to handle redirects.
+    # If the client follows redirects, .get() returns the final response.
+    # So we just mock the final response as success.
+
+    mock_resp_final = MagicMock()
+    mock_resp_final.status_code = 200
+    mock_resp_final.text = "Redirected Content"
+
+    mock_httpx_client.get.return_value = mock_resp_final
+
+    with patch("time.sleep"):
+        result = downloader.download_trial("301")
+
+    assert result is True
+    assert (tmp_path / "301.html").read_text(encoding="utf-8") == "Redirected Content"
