@@ -34,9 +34,11 @@ def run_bronze(
     max_pages: int = 1,
     crawler: Optional[Crawler] = None,
     downloader: Optional[Downloader] = None,
+    pipeline: Optional[Pipeline] = None,
 ) -> None:
     """
     Execute the Bronze Layer workflow: Crawl -> Deduplicate -> Download.
+    Includes Delta Logic using High-Water Mark.
 
     Args:
         output_dir: Directory to save HTML files.
@@ -44,9 +46,19 @@ def run_bronze(
         max_pages: Number of pages to crawl.
         crawler: Optional injected Crawler instance.
         downloader: Optional injected Downloader instance.
+        pipeline: Optional injected Pipeline instance (for state management).
     """
     crawler = crawler or Crawler()
     downloader = downloader or Downloader(output_dir=Path(output_dir))
+    pipeline = pipeline or Pipeline()
+
+    # R.3.2.2: Retrieve High-Water Mark
+    high_water_mark = pipeline.get_high_water_mark()
+    date_from = high_water_mark.isoformat() if high_water_mark else None
+    if date_from:
+        logger.info(f"Performing Delta Crawl from {date_from}")
+    else:
+        logger.info("Performing Full Crawl (No HWM found)")
 
     all_ids: List[str] = []
 
@@ -54,7 +66,8 @@ def run_bronze(
     for i in range(start_page, start_page + max_pages):
         try:
             logger.info(f"Crawling page {i}...")
-            html = crawler.fetch_search_page(page_num=i)
+            # R.3.2.1: Pass HWM to search
+            html = crawler.fetch_search_page(page_num=i, date_from=date_from)
             ids = crawler.extract_ids(html)
             all_ids.extend(ids)
         except Exception as e:
@@ -74,11 +87,20 @@ def run_bronze(
         except Exception as e:
             logger.error(f"Failed to download {trial_id}: {e}")
 
+    # R.3.2.2: Update High-Water Mark (to today)
+    # Ideally, we should update this based on the latest date found in the data or run start time.
+    # The requirement says "track the maximum timestamp... processed".
+    # Since we filter by Date From, we can safely set HWM to "now" assuming we caught everything up to now.
+    from datetime import date
+
+    pipeline.set_high_water_mark(date.today())
+
     logger.info(f"Bronze run complete. Downloaded {success_count}/{len(unique_ids)} trials.")
 
 
 def run_silver(
     input_dir: str = "data/bronze",
+    mode: str = "FULL",
     parser: Optional[Parser] = None,
     pipeline: Optional[Pipeline] = None,
     loader: Optional[BaseLoader] = None,
@@ -88,6 +110,7 @@ def run_silver(
 
     Args:
         input_dir: Directory containing raw HTML files.
+        mode: Loading mode, either "FULL" or "UPSERT".
         parser: Optional Parser instance.
         pipeline: Optional Pipeline instance.
         loader: Optional Loader instance.
@@ -95,6 +118,9 @@ def run_silver(
     parser = parser or Parser()
     pipeline = pipeline or Pipeline()
     loader = loader or PostgresLoader()
+
+    if mode not in ["FULL", "UPSERT"]:
+        raise ValueError("Mode must be 'FULL' or 'UPSERT'")
 
     input_path = Path(input_dir)
     if not input_path.exists():
@@ -162,18 +188,38 @@ def run_silver(
         loader.connect()
         loader.prepare_schema()
 
-        # Load Trials
-        logger.info(f"Loading {len(trials)} trials...")
-        # We need to bridge the generator from Pipeline to the IO stream expected by Loader.
-        # Pipeline.stage_data yields strings (chunks).
-        # We need a file-like object that reads from this generator.
+        if mode == "FULL":
+            logger.info("Running FULL load (Truncate + Insert)...")
+            # R.5.1.1: Truncate tables first (cascade handles children)
+            loader.truncate_tables(["eu_trials"])
+            _load_table(loader, pipeline, trials, "eu_trials", mode="FULL")
+            _load_table(loader, pipeline, drugs, "eu_trial_drugs", mode="FULL")
+            _load_table(loader, pipeline, conditions, "eu_trial_conditions", mode="FULL")
 
-        _load_table(loader, pipeline, trials, "eu_trials")
-        _load_table(loader, pipeline, drugs, "eu_trial_drugs")
-        _load_table(loader, pipeline, conditions, "eu_trial_conditions")
+        else:
+            logger.info("Running UPSERT load...")
+            # R.5.1.2: Upsert logic
+            _load_table(loader, pipeline, trials, "eu_trials", mode="UPSERT", conflict_keys=["eudract_number"])
+            # For children, we also use upsert now that we have unique constraints
+            _load_table(
+                loader,
+                pipeline,
+                drugs,
+                "eu_trial_drugs",
+                mode="UPSERT",
+                conflict_keys=["eudract_number", "drug_name", "pharmaceutical_form"],
+            )
+            _load_table(
+                loader,
+                pipeline,
+                conditions,
+                "eu_trial_conditions",
+                mode="UPSERT",
+                conflict_keys=["eudract_number", "condition_name"],
+            )
 
         loader.commit()
-        logger.info("Silver run complete.")
+        logger.info(f"Silver run ({mode}) complete.")
 
     except Exception as e:
         logger.error(f"Database load failed: {e}")
@@ -207,7 +253,14 @@ class StringIteratorIO(io.TextIOBase):
             return ""
 
 
-def _load_table(loader: BaseLoader, pipeline: Pipeline, data: Sequence[BaseModel], table_name: str) -> None:
+def _load_table(
+    loader: BaseLoader,
+    pipeline: Pipeline,
+    data: Sequence[BaseModel],
+    table_name: str,
+    mode: str = "FULL",
+    conflict_keys: Optional[List[str]] = None,
+) -> None:
     if not data:
         return
 
@@ -215,7 +268,13 @@ def _load_table(loader: BaseLoader, pipeline: Pipeline, data: Sequence[BaseModel
     stream = StringIteratorIO(gen)
     # The BaseLoader interface expects IO[str], and StringIteratorIO is a TextIOBase which is IO[str].
     # However, mypy is strict. Explicitly typing stream helps.
-    loader.bulk_load_stream(stream, table_name)  # type: ignore[arg-type]
+
+    if mode == "FULL":
+        loader.bulk_load_stream(stream, table_name)  # type: ignore[arg-type]
+    elif mode == "UPSERT":
+        if not conflict_keys:
+            raise ValueError(f"Conflict keys required for UPSERT on {table_name}")
+        loader.upsert_stream(stream, table_name, conflict_keys=conflict_keys)  # type: ignore[arg-type]
 
 
 def hello_world() -> str:

@@ -48,6 +48,24 @@ def test_fetch_search_page_success(mock_httpx_client: MagicMock) -> None:
     mock_httpx_client.get.assert_called_once()
 
 
+def test_fetch_search_page_with_dates(mock_httpx_client: MagicMock) -> None:
+    """Test fetching page with date filters."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = "<html>Success</html>"
+    mock_httpx_client.get.return_value = mock_response
+
+    with patch("time.sleep"):
+        crawler = Crawler(client=mock_httpx_client)
+        crawler.fetch_search_page(page_num=1, date_from="2023-01-01", date_to="2023-12-31")
+
+    # Verify query params
+    mock_httpx_client.get.assert_called_once()
+    args, kwargs = mock_httpx_client.get.call_args
+    assert kwargs["params"]["dateFrom"] == "2023-01-01"
+    assert kwargs["params"]["dateTo"] == "2023-12-31"
+
+
 def test_fetch_search_page_failure(mock_httpx_client: MagicMock) -> None:
     """Test failure during page fetch."""
     mock_response = MagicMock()

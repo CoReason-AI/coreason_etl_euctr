@@ -32,13 +32,17 @@ class Crawler:
         """
         self.client = client or httpx.Client(headers={"User-Agent": "Coreason-ETL-Crawler/1.0"}, follow_redirects=True)
 
-    def fetch_search_page(self, page_num: int = 1, query: str = "") -> str:
+    def fetch_search_page(
+        self, page_num: int = 1, query: str = "", date_from: Optional[str] = None, date_to: Optional[str] = None
+    ) -> str:
         """
         Fetch the HTML content of a search result page.
 
         Args:
             page_num: The page number to fetch (1-indexed).
             query: The search query string (defaults to empty for all trials).
+            date_from: Optional start date filter (YYYY-MM-DD).
+            date_to: Optional end date filter (YYYY-MM-DD).
 
         Returns:
             The raw HTML content of the page.
@@ -47,6 +51,10 @@ class Crawler:
             httpx.HTTPStatusError: If the request fails.
         """
         params = {"query": query, "page": str(page_num)}
+        if date_from:
+            params["dateFrom"] = date_from
+        if date_to:
+            params["dateTo"] = date_to
 
         # Politeness: implementation of R.3.4.1
         time.sleep(1)
