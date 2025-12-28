@@ -132,7 +132,8 @@ class PostgresLoader(BaseLoader):
 
         # Parse columns (simple CSV split, assuming no commas in headers)
         columns_list = [c.strip() for c in header_line.split(",")]
-        columns_str = ", ".join(columns_list)
+        # Quote columns to handle reserved words/special chars
+        columns_str = ", ".join(f'"{c}"' for c in columns_list)
 
         # Use explicit columns in COPY to handle schema mismatch (e.g. auto-id in DB)
         # We removed the header from the stream, so we don't use 'HEADER' option.
@@ -184,7 +185,8 @@ class PostgresLoader(BaseLoader):
             remaining_chunk = ""
 
         columns_list = [c.strip() for c in header_line.split(",")]
-        columns_str = ", ".join(columns_list)
+        # Quote columns to handle reserved words/special chars
+        columns_str = ", ".join(f'"{c}"' for c in columns_list)
 
         try:
             with self.conn.cursor() as cur:
@@ -217,18 +219,22 @@ class PostgresLoader(BaseLoader):
                     return
 
                 columns = [desc.name for desc in cur.description]
-                cols_str = ", ".join(columns)
+                # Quote columns in SELECT/INSERT list
+                cols_str = ", ".join(f'"{c}"' for c in columns)
 
-                # Build SET clause: "col = EXCLUDED.col" for all non-key columns
+                # Build SET clause: "col" = EXCLUDED."col" for all non-key columns
                 # We exclude conflict keys from the update set usually, or update them too (idempotent).
-                update_assignments = [f"{col} = EXCLUDED.{col}" for col in columns if col not in conflict_keys]
+                update_assignments = [f'"{col}" = EXCLUDED."{col}"' for col in columns if col not in conflict_keys]
 
                 # If there are no columns to update (e.g. table only has PKs?), we do NOTHING?
                 # But requirement says "ON CONFLICT UPDATE".
                 # If update_assignments is empty (only PKs), we might want DO NOTHING.
                 # But assume there are other columns.
 
-                conflict_target = ", ".join(conflict_keys)
+                # Conflict target also needs quoting if keys are reserved words, but typically user provides clean keys.
+                # To be safe, we can quote them too, but user passes them as list of strings which might be raw.
+                # However, keys are usually column names.
+                conflict_target = ", ".join(f'"{k}"' for k in conflict_keys)
 
                 if update_assignments:
                     update_clause = f"UPDATE SET {', '.join(update_assignments)}"

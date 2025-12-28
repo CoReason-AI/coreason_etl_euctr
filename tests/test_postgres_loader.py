@@ -131,7 +131,7 @@ def test_bulk_load_stream_success(mock_psycopg_connect: MagicMock) -> None:
     mock_cursor.copy.assert_called_once()
     args, _ = mock_cursor.copy.call_args
     # Implementation now uses explicit columns derived from header
-    assert "COPY test_table (col1, col2) FROM STDIN" in args[0]
+    assert 'COPY test_table ("col1", "col2") FROM STDIN' in args[0]
     # Verify data written (remaining part)
     # The stringIO might return everything in first read().
     assert mock_copy.write.called
@@ -154,7 +154,7 @@ def test_bulk_load_stream_partial_header(mock_psycopg_connect: MagicMock) -> Non
 
     # Should still work, cols parsed, no remaining chunk written
     args, _ = mock_cursor.copy.call_args
-    assert "COPY test_table (col1, col2) FROM STDIN" in args[0]
+    assert 'COPY test_table ("col1", "col2") FROM STDIN' in args[0]
 
 
 def test_bulk_load_stream_empty(mock_psycopg_connect: MagicMock) -> None:
@@ -292,7 +292,7 @@ def test_upsert_stream_partial_header(mock_psycopg_connect: MagicMock) -> None:
 
     args, _ = mock_cursor.copy.call_args
     assert "COPY" in args[0]
-    assert "(id, val)" in args[0]
+    assert '("id", "val")' in args[0]
 
 
 def test_upsert_stream_empty(mock_psycopg_connect: MagicMock) -> None:
@@ -349,7 +349,7 @@ def test_upsert_stream_only_pks(mock_psycopg_connect: MagicMock) -> None:
     insert_call = next((call for call in calls if "INSERT INTO test_table" in call[0][0]), None)
     assert insert_call is not None
     sql = insert_call[0][0]
-    assert "ON CONFLICT (id) DO NOTHING" in sql
+    assert 'ON CONFLICT ("id") DO NOTHING' in sql
 
 
 def test_upsert_stream_failure(mock_psycopg_connect: MagicMock) -> None:
