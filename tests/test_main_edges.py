@@ -58,6 +58,7 @@ def test_run_silver_mixed_results(tmp_path: Path) -> None:
 
     # Let's mock pipeline too to verify inputs
     mock_pipeline = MagicMock()
+    mock_pipeline.get_silver_watermark.return_value = None
     mock_pipeline.stage_data.return_value = iter(["header", "row"])
 
     # Reset parser side_effect for the second run
@@ -96,6 +97,7 @@ def test_run_silver_large_number_of_files(tmp_path: Path) -> None:
 
     mock_loader = MagicMock()
     mock_pipeline = MagicMock()
+    mock_pipeline.get_silver_watermark.return_value = None
     mock_pipeline.stage_data.return_value = iter(["header"])
 
     run_silver(input_dir=str(d), parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)

@@ -146,7 +146,30 @@ def run_silver(
     files = list(input_path.glob("*.html"))
     logger.info(f"Found {len(files)} HTML files to process.")
 
-    for file_path in files:
+    # R.3.2.3: Incremental Processing (Skip unchanged files)
+    silver_watermark = pipeline.get_silver_watermark()
+    current_run_start_time = 0.0
+    import time
+
+    current_run_start_time = time.time()
+
+    # If this is the first run, watermark is None, so we process everything.
+    # If we have a watermark, we skip files older than it.
+    files_to_process = []
+    skipped_count = 0
+
+    for f in files:
+        mtime = f.stat().st_mtime
+        if silver_watermark and mtime <= silver_watermark:
+            skipped_count += 1
+            continue
+        files_to_process.append(f)
+
+    if skipped_count > 0:
+        logger.info(f"Skipping {skipped_count} unchanged files (mtime <= {silver_watermark}).")
+    logger.info(f"Processing {len(files_to_process)} new/modified files.")
+
+    for file_path in files_to_process:
         try:
             content = file_path.read_text(encoding="utf-8")
             # Extract ID from filename? Or parse it? Spec says filename is ID.
@@ -220,6 +243,10 @@ def run_silver(
             )
 
         loader.commit()
+
+        # Update watermark only on success
+        pipeline.set_silver_watermark(current_run_start_time)
+
         logger.info(f"Silver run ({mode}) complete.")
 
     except Exception as e:
