@@ -50,7 +50,7 @@ def test_bulk_load_dynamic_columns(mock_psycopg_connect: MagicMock) -> None:
 
     # Expectation: Explicit columns, NO HEADER (since we consumed it)
     # Note: implementation uses ", ".join so there are spaces
-    assert "COPY test_table (col_a, col_b) FROM STDIN" in sql
+    assert 'COPY test_table ("col_a", "col_b") FROM STDIN' in sql
     assert "HEADER" not in sql
 
     # Verify data written (should be just values)
@@ -94,5 +94,5 @@ def test_upsert_stream_dynamic_columns(mock_psycopg_connect: MagicMock) -> None:
     # CREATE TEMP TABLE {temp} ...
     # COPY {temp} (col_a) ...
     assert "COPY" in sql
-    assert "(col_a) FROM STDIN" in sql
+    assert '("col_a") FROM STDIN' in sql
     assert "HEADER" not in sql
