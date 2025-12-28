@@ -25,7 +25,7 @@ from coreason_etl_euctr.loader import BaseLoader
 from coreason_etl_euctr.parser import Parser
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
-from coreason_etl_euctr.storage import LocalStorageBackend
+from coreason_etl_euctr.storage import LocalStorageBackend, S3StorageBackend, StorageBackend
 
 logger.remove()
 logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"))
@@ -38,22 +38,24 @@ def run_bronze(
     crawler: Optional[Crawler] = None,
     downloader: Optional[Downloader] = None,
     pipeline: Optional[Pipeline] = None,
+    storage_backend: Optional[StorageBackend] = None,
 ) -> None:
     """
     Execute the Bronze Layer workflow: Crawl -> Deduplicate -> Download.
     Includes Delta Logic using High-Water Mark.
 
     Args:
-        output_dir: Directory to save HTML files.
+        output_dir: Directory to save HTML files (used if storage_backend is None).
         start_page: Page number to start crawling.
         max_pages: Number of pages to crawl.
         crawler: Optional injected Crawler instance.
         downloader: Optional injected Downloader instance.
         pipeline: Optional injected Pipeline instance (for state management).
+        storage_backend: Optional injected StorageBackend (Local or S3).
     """
     crawler = crawler or Crawler()
     if not downloader:
-        storage = LocalStorageBackend(Path(output_dir))
+        storage = storage_backend or LocalStorageBackend(Path(output_dir))
         downloader = Downloader(storage_backend=storage)
     pipeline = pipeline or Pipeline()
 
@@ -327,6 +329,22 @@ def hello_world() -> str:
     return "Hello World!"
 
 
+def _get_storage_backend(args: argparse.Namespace) -> Optional[StorageBackend]:
+    """
+    Resolve Storage Backend configuration from CLI args and Env Vars.
+    Priority: CLI > Env > None (Default).
+    """
+    s3_bucket = args.s3_bucket or os.getenv("EUCTR_S3_BUCKET")
+    s3_prefix = args.s3_prefix or os.getenv("EUCTR_S3_PREFIX", "")
+    s3_region = args.s3_region or os.getenv("EUCTR_S3_REGION")
+
+    if s3_bucket:
+        logger.info(f"Using S3 Storage Backend: s3://{s3_bucket}/{s3_prefix}")
+        return S3StorageBackend(bucket_name=s3_bucket, prefix=s3_prefix, region_name=s3_region)
+
+    return None
+
+
 def main() -> int:
     """
     CLI Entry Point.
@@ -336,9 +354,14 @@ def main() -> int:
 
     # Bronze / Crawl
     parser_crawl = subparsers.add_parser("crawl", help="Run the Bronze layer (Crawler/Downloader)")
-    parser_crawl.add_argument("--output-dir", default="data/bronze", help="Directory to save HTML files")
+    parser_crawl.add_argument("--output-dir", default="data/bronze", help="Directory to save HTML files (Local Only)")
     parser_crawl.add_argument("--start-page", type=int, default=1, help="Page number to start crawling")
     parser_crawl.add_argument("--max-pages", type=int, default=1, help="Number of pages to crawl")
+
+    # S3 Configuration for Crawl
+    parser_crawl.add_argument("--s3-bucket", help="S3 Bucket name for Bronze storage")
+    parser_crawl.add_argument("--s3-prefix", help="S3 Prefix for Bronze storage")
+    parser_crawl.add_argument("--s3-region", help="AWS Region for S3")
 
     # Silver / Load
     parser_load = subparsers.add_parser("load", help="Run the Silver layer (Parser/Loader)")
@@ -348,8 +371,18 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command == "crawl":
-        run_bronze(output_dir=args.output_dir, start_page=args.start_page, max_pages=args.max_pages)
+        storage = _get_storage_backend(args)
+        run_bronze(
+            output_dir=args.output_dir,
+            start_page=args.start_page,
+            max_pages=args.max_pages,
+            storage_backend=storage
+        )
     elif args.command == "load":
+        # Guardrail for unimplemented S3 Silver
+        # If user tries to load from what implies S3 (e.g. they set S3 env vars but rely on input-dir default)
+        # Actually load uses input-dir arg. If input-dir is a path, it works.
+        # But if they want S3, they can't specify it yet.
         run_silver(input_dir=args.input_dir, mode=args.mode)
     else:
         parser.print_help()
