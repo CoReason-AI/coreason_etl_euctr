@@ -58,12 +58,16 @@ class Parser:
         if not trial_status:
             trial_status = extract_field_by_label(soup, "Status of the trial")
 
+        # 6. Age Groups (Section F)
+        age_groups = self._parse_age_groups(soup)
+
         return EuTrial(
             eudract_number=eudract_number,
             sponsor_name=sponsor_name,
             trial_title=trial_title,
             start_date=start_date,
             trial_status=trial_status,
+            age_groups=age_groups,
             url_source=url_source,
         )
 
@@ -208,3 +212,104 @@ class Parser:
             date_str = extract_field_by_label(soup, "Date record first entered")
 
         return parse_flexible_date(date_str)
+
+    def _parse_age_groups(self, soup: BeautifulSoup) -> Optional[List[str]]:
+        """
+        Parse Section F to extract population age groups.
+        Looks for affirmative indicators (Yes) next to age labels.
+        """
+        # Common labels in Section F
+        # F.1.1 Adults (18-64 years)
+        # F.1.2 Children (2-11 years)
+        # F.1.2.1 Preterm newborn infants
+        # ...
+        # Structure is typically:
+        # <tr>
+        #   <td>F.1.1</td>
+        #   <td>Adults (18-64 years)</td>
+        #   <td>Yes</td>
+        # </tr>
+
+        # We search for the specific codes or labels
+        age_map = {
+            "F.1.1": "Adults",
+            "F.1.2": "Children",  # This is often a header for sub-groups, but sometimes checked itself?
+            "F.1.3": "Elderly",
+            # Sub groups
+            "F.1.2.1": "Preterm newborn infants",
+            "F.1.2.2": "Newborns",
+            "F.1.2.3": "Infants and toddlers",
+            "F.1.2.4": "Children",  # 2-11
+            "F.1.2.5": "Adolescents",
+        }
+
+        found_groups = []
+
+        # Find all "Yes" strings
+        yes_nodes = soup.find_all(string=lambda text: text and text.strip().lower() == "yes")
+
+        for node in yes_nodes:
+            # Check parent cell
+            cell = node.parent
+            if not cell or cell.name != "td":
+                continue
+
+            row = cell.parent
+            if not row or row.name != "tr":
+                continue
+
+            # Get cells in row
+            cells = row.find_all("td")
+            if len(cells) < 2:
+                continue
+
+            # Check if this row matches an age group
+            row_text = row.get_text(" ", strip=True)
+
+            # Extract strict label text for False Positive prevention
+            label_text = ""
+            if len(cells) >= 3:
+                # Assume col 1 is label. If empty, maybe col 0.
+                label_text = cells[1].get_text(strip=True) or cells[0].get_text(strip=True)
+            elif len(cells) == 2:
+                label_text = cells[0].get_text(strip=True)
+
+            match = False
+            # Sort keys by length descending to match F.1.2.1 before F.1.2
+            sorted_codes = sorted(age_map.keys(), key=len, reverse=True)
+
+            for code in sorted_codes:
+                name = age_map[code]
+
+                # Logic:
+                # 1. If strict Code is present, it's a match.
+                # 2. If Name is present, we must ensure it's not a sentence containing the name.
+                #    We check if the label starts with the Name (ignoring case/whitespace).
+
+                if code in row_text:
+                    found_groups.append(name)
+                    match = True
+                    break
+
+                # Name fallback
+                if name in label_text:
+                    # Check for start match to avoid "Is ... Adults?"
+                    # label_text.strip().startswith(name) is usually safe enough
+                    # for "Adults (18-64)" or "Adults" or "F.1.1 Adults".
+                    # However, "F.1.1 Adults" starts with F.1.1.
+                    # But if Code was missing (we are here because `code in row_text` failed?),
+                    # then label probably doesn't have the code.
+                    # Or code matching failed for some reason.
+
+                    # If we matched Name but not Code, and label doesn't start with Name, it's suspect.
+                    # E.g. "Is informed consent... Adults?"
+
+                    if label_text.strip().startswith(name):
+                        found_groups.append(name)
+                        match = True
+                        break
+
+            if not match:
+                pass
+
+        return sorted(list(set(found_groups))) if found_groups else None

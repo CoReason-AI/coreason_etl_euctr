@@ -70,6 +70,7 @@ class PostgresLoader(BaseLoader):
                 trial_title TEXT,
                 start_date DATE,
                 trial_status VARCHAR(50),
+                age_groups TEXT[],
                 url_source TEXT,
                 last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );

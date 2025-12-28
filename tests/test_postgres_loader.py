@@ -78,6 +78,10 @@ def test_prepare_schema_success(mock_psycopg_connect: MagicMock) -> None:
     assert mock_cursor.execute.call_count == 3
     # Verify content of SQL (check for new UNIQUE constraints)
     calls = mock_cursor.execute.call_args_list
+
+    # Check eu_trials definition for age_groups
+    assert "age_groups TEXT[]" in calls[0][0][0]
+
     assert "CONSTRAINT uq_trial_drug UNIQUE" in calls[1][0][0]
     # Check that pharmaceutical_form is included in the unique constraint
     assert "pharmaceutical_form" in calls[1][0][0]

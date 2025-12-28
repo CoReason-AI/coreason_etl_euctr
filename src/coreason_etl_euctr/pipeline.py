@@ -206,6 +206,28 @@ class Pipeline:
         # Default csv.writer handles None by writing empty string if not quoted?
         # Actually csv.writer handles None by raising error? No, it converts to string. None -> '' is better.
         # Let's clean row.
-        cleaned_row = [str(v) if v is not None else "" for v in row]
+        cleaned_row = []
+        for v in row:
+            if v is None:
+                cleaned_row.append("")
+            elif isinstance(v, list):
+                # Format list as Postgres Array literal: {val1,val2}
+                # Use double quotes for elements if needed, but inner quotes must be escaped.
+                # Simplest robust way: "{" + ",".join('"' + s.replace('"', '\\"') + '"' for s in v) + "}"
+                # However, for simple strings we can try a cleaner approach.
+                # NOTE: CSV writer will also quote the entire cell if it contains delimiters.
+                # Postgres expects the cell content to be `{...}`.
+
+                # We need to handle internal double quotes by escaping them.
+                # Postgres array syntax: {"a", "b"}
+
+                def escape_pg_array_elem(s: str) -> str:
+                    # Escape backslashes and double quotes
+                    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+                array_str = "{" + ",".join(escape_pg_array_elem(str(x)) for x in v) + "}"
+                cleaned_row.append(array_str)
+            else:
+                cleaned_row.append(str(v))
 
         writer.writerow(cleaned_row)
