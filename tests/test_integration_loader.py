@@ -8,20 +8,17 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-import os
 from datetime import date
 from typing import Generator
 
-import psycopg
 import pytest
-from testcontainers.postgres import PostgresContainer
-
 from coreason_etl_euctr.models import EuTrial, EuTrialCondition, EuTrialDrug
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
+from testcontainers.postgres import PostgresContainer
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="module")  # type: ignore[misc]
 def postgres_container() -> Generator[PostgresContainer, None, None]:
     """
     Spins up a PostgreSQL container for integration testing.
@@ -30,7 +27,7 @@ def postgres_container() -> Generator[PostgresContainer, None, None]:
         yield postgres
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def db_loader(postgres_container: PostgresContainer, monkeypatch: pytest.MonkeyPatch) -> PostgresLoader:
     """
     Configures the environment variables to point to the test container
@@ -65,9 +62,7 @@ def test_postgres_loader_full_lifecycle(db_loader: PostgresLoader) -> None:
 
         # Check tables exist
         with db_loader.conn.cursor() as cur:  # type: ignore
-            cur.execute(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
-            )
+            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
             tables = {row[0] for row in cur.fetchall()}
             assert "eu_trials" in tables
             assert "eu_trial_drugs" in tables
@@ -105,6 +100,7 @@ def test_postgres_loader_full_lifecycle(db_loader: PostgresLoader) -> None:
         # Since we don't have the StringIteratorIO available (it's in main.py, not exported?),
         # we can just use io.StringIO for small data in tests.
         import io
+
         stream_trials = io.StringIO("".join(gen_trials))
         db_loader.bulk_load_stream(stream_trials, "eu_trials")
 
@@ -151,9 +147,7 @@ def test_postgres_loader_full_lifecycle(db_loader: PostgresLoader) -> None:
         gen_drugs_up = pipeline.stage_data([drug_1, drug_2])
         stream_drugs_up = io.StringIO("".join(gen_drugs_up))
         db_loader.upsert_stream(
-            stream_drugs_up,
-            "eu_trial_drugs",
-            conflict_keys=["eudract_number", "drug_name", "pharmaceutical_form"]
+            stream_drugs_up, "eu_trial_drugs", conflict_keys=["eudract_number", "drug_name", "pharmaceutical_form"]
         )
 
         db_loader.commit()
