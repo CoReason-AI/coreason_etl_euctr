@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import io
-from typing import Generator, Iterator
+from typing import IO, Generator, cast
 from unittest.mock import MagicMock, patch
 
 import psycopg
@@ -19,6 +19,7 @@ from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 class MockStringIteratorIO(io.TextIOBase):
     """Simple mock stream that yields chunks."""
+
     def __init__(self, chunks: list[str]):
         self.chunks = iter(chunks)
 
@@ -124,7 +125,7 @@ def test_bulk_load_stream_success(mock_psycopg_connect: MagicMock) -> None:
 
     # Simulate chunk split: header+newline+part of value
     data = MockStringIteratorIO(["col1,col2\n", "val1,val2"])
-    loader.bulk_load_stream(data, "test_table")
+    loader.bulk_load_stream(cast(IO[str], data), "test_table")
 
     # Verify copy called with correct SQL
     mock_cursor.copy.assert_called_once()
@@ -149,7 +150,7 @@ def test_bulk_load_stream_partial_header(mock_psycopg_connect: MagicMock) -> Non
     loader.connect()
 
     data = MockStringIteratorIO(["col1,col2"])  # No newline
-    loader.bulk_load_stream(data, "test_table")
+    loader.bulk_load_stream(cast(IO[str], data), "test_table")
 
     # Should still work, cols parsed, no remaining chunk written
     args, _ = mock_cursor.copy.call_args
@@ -164,7 +165,7 @@ def test_bulk_load_stream_empty(mock_psycopg_connect: MagicMock) -> None:
     loader.connect()
 
     data = MockStringIteratorIO([])
-    loader.bulk_load_stream(data, "test_table")
+    loader.bulk_load_stream(cast(IO[str], data), "test_table")
     # Should not call copy if empty
     mock_conn.cursor.assert_not_called()
 
@@ -183,7 +184,7 @@ def test_bulk_load_stream_failure(mock_psycopg_connect: MagicMock) -> None:
 
     data = MockStringIteratorIO(["col1\n", "val1"])
     with pytest.raises(psycopg.Error):
-        loader.bulk_load_stream(data, "test_table")
+        loader.bulk_load_stream(cast(IO[str], data), "test_table")
 
 
 def test_bulk_load_not_connected() -> None:
@@ -234,7 +235,7 @@ def test_upsert_stream_success(mock_psycopg_connect: MagicMock) -> None:
 
     # Chunk 1: Header, Chunk 2: Body
     data = MockStringIteratorIO(["id,val\n", "1,a"])
-    loader.upsert_stream(data, "test_table", conflict_keys=["id"])
+    loader.upsert_stream(cast(IO[str], data), "test_table", conflict_keys=["id"])
 
     calls = mock_cursor.execute.call_args_list
     assert len(calls) >= 4
@@ -253,14 +254,15 @@ def test_upsert_stream_chunk_split(mock_psycopg_connect: MagicMock) -> None:
     mock_cursor.copy.return_value.__enter__.return_value = mock_copy
     mock_psycopg_connect.return_value = mock_conn
 
-    Col = MagicMock(); Col.name="id"
+    Col = MagicMock()
+    Col.name = "id"
     mock_cursor.description = [Col]
 
     loader = PostgresLoader()
     loader.connect()
 
     data = MockStringIteratorIO(["id\nval", "ue"])
-    loader.upsert_stream(data, "t", conflict_keys=["id"])
+    loader.upsert_stream(cast(IO[str], data), "t", conflict_keys=["id"])
 
     # Header: "id\nval". Split -> "id", "val".
     # Write "val".
@@ -286,7 +288,7 @@ def test_upsert_stream_partial_header(mock_psycopg_connect: MagicMock) -> None:
     loader.connect()
 
     data = MockStringIteratorIO(["id,val"])
-    loader.upsert_stream(data, "test_table", conflict_keys=["id"])
+    loader.upsert_stream(cast(IO[str], data), "test_table", conflict_keys=["id"])
 
     args, _ = mock_cursor.copy.call_args
     assert "COPY" in args[0]
@@ -301,7 +303,7 @@ def test_upsert_stream_empty(mock_psycopg_connect: MagicMock) -> None:
     loader.connect()
 
     data = MockStringIteratorIO([])
-    loader.upsert_stream(data, "test_table", conflict_keys=["id"])
+    loader.upsert_stream(cast(IO[str], data), "test_table", conflict_keys=["id"])
     # Should skip everything
     mock_conn.cursor.assert_not_called()
 
@@ -340,7 +342,7 @@ def test_upsert_stream_only_pks(mock_psycopg_connect: MagicMock) -> None:
     loader.connect()
 
     data = MockStringIteratorIO(["id\n", "1"])
-    loader.upsert_stream(data, "test_table", conflict_keys=["id"])
+    loader.upsert_stream(cast(IO[str], data), "test_table", conflict_keys=["id"])
 
     calls = mock_cursor.execute.call_args_list
     # Check Insert
@@ -364,7 +366,8 @@ def test_upsert_stream_failure(mock_psycopg_connect: MagicMock) -> None:
     data = MockStringIteratorIO(["id,val\n", "1,a"])
 
     with pytest.raises(psycopg.Error, match="Upsert error"):
-        loader.upsert_stream(data, "test_table", conflict_keys=["id"])
+        loader.upsert_stream(cast(IO[str], data), "test_table", conflict_keys=["id"])
+
 
 def test_upsert_stream_no_columns(mock_psycopg_connect: MagicMock) -> None:
     """Test upsert aborts if no columns found in temp table."""
@@ -380,7 +383,7 @@ def test_upsert_stream_no_columns(mock_psycopg_connect: MagicMock) -> None:
     loader.connect()
     data = MockStringIteratorIO(["id,val\n", "1,a"])
 
-    loader.upsert_stream(data, "test_table", conflict_keys=["id"])
+    loader.upsert_stream(cast(IO[str], data), "test_table", conflict_keys=["id"])
 
     # Should create temp, copy, then stop before insert
     # Check that insert was NOT called
