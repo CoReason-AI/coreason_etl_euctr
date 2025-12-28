@@ -81,7 +81,8 @@ class PostgresLoader(BaseLoader):
                 drug_name VARCHAR(255),
                 active_ingredient VARCHAR(255),
                 cas_number VARCHAR(50),
-                pharmaceutical_form VARCHAR(255)
+                pharmaceutical_form VARCHAR(255),
+                CONSTRAINT uq_trial_drug UNIQUE (eudract_number, drug_name, pharmaceutical_form)
             );
             """,
             """
@@ -89,7 +90,8 @@ class PostgresLoader(BaseLoader):
                 id SERIAL PRIMARY KEY,
                 eudract_number VARCHAR(20) REFERENCES eu_trials(eudract_number),
                 condition_name TEXT,
-                meddra_code VARCHAR(50)
+                meddra_code VARCHAR(50),
+                CONSTRAINT uq_trial_condition UNIQUE (eudract_number, condition_name)
             );
             """,
         ]
@@ -108,15 +110,41 @@ class PostgresLoader(BaseLoader):
     def bulk_load_stream(self, data_stream: IO[str], target_table: str) -> None:
         """
         Execute COPY FROM STDIN.
-        Assumes CSV format with Header.
+        Reads the first line (header) to determine columns, then uses explicit column list.
         """
         if not self.conn:
             raise RuntimeError("Database not connected.")
 
-        sql = f"COPY {target_table} FROM STDIN WITH (FORMAT CSV, HEADER)"
+        # Read header to determine columns
+        # Note: We assume the stream yields the header as the first chunk (from Pipeline)
+        # or we read until newline.
+        header_chunk = data_stream.read()
+        if not header_chunk:
+            logger.warning(f"Empty stream for {target_table}, skipping.")
+            return
+
+        # Extract header line
+        if "\n" in header_chunk:
+            header_line, remaining_chunk = header_chunk.split("\n", 1)
+        else:
+            header_line = header_chunk
+            remaining_chunk = ""
+
+        # Parse columns (simple CSV split, assuming no commas in headers)
+        columns_list = [c.strip() for c in header_line.split(",")]
+        columns_str = ", ".join(columns_list)
+
+        # Use explicit columns in COPY to handle schema mismatch (e.g. auto-id in DB)
+        # We removed the header from the stream, so we don't use 'HEADER' option.
+        sql = f"COPY {target_table} ({columns_str}) FROM STDIN WITH (FORMAT CSV)"
+
         try:
             with self.conn.cursor() as cur:
                 with cur.copy(sql) as copy:
+                    # Write the remaining part of the first chunk
+                    if remaining_chunk:
+                        copy.write(remaining_chunk)
+                    # Write rest of stream
                     while data := data_stream.read(8192):
                         copy.write(data)
             logger.info(f"Bulk loaded data into {target_table}.")
@@ -143,6 +171,21 @@ class PostgresLoader(BaseLoader):
         suffix = "".join(random.choices(string.ascii_lowercase, k=6))
         temp_table = f"{target_table}_staging_{suffix}"
 
+        # Read header to determine columns
+        header_chunk = data_stream.read()
+        if not header_chunk:
+            logger.warning(f"Empty stream for {target_table}, skipping upsert.")
+            return
+
+        if "\n" in header_chunk:
+            header_line, remaining_chunk = header_chunk.split("\n", 1)
+        else:
+            header_line = header_chunk
+            remaining_chunk = ""
+
+        columns_list = [c.strip() for c in header_line.split(",")]
+        columns_str = ", ".join(columns_list)
+
         try:
             with self.conn.cursor() as cur:
                 # 1. Create Temp Table (Structure only)
@@ -155,8 +198,11 @@ class PostgresLoader(BaseLoader):
                 cur.execute(create_temp_sql)
 
                 # 2. Bulk Load to Temp Table
-                sql_copy = f"COPY {temp_table} FROM STDIN WITH (FORMAT CSV, HEADER)"
+                # Use explicit columns
+                sql_copy = f"COPY {temp_table} ({columns_str}) FROM STDIN WITH (FORMAT CSV)"
                 with cur.copy(sql_copy) as copy:
+                    if remaining_chunk:
+                        copy.write(remaining_chunk)
                     while data := data_stream.read(8192):
                         copy.write(data)
 
