@@ -119,10 +119,10 @@ class Downloader:
 
                 if meta_dict.get("hash") == new_hash:
                     logger.info(f"Content for {eudract_number} is unchanged (Hash match).")
-                    # We still update metadata timestamp? Or keep it?
-                    # Usually "last_seen" might be updated.
-                    # But if we skip parsing, we need to know it is unchanged.
-                    # We will update metadata to reflect latest download attempt time.
+                    # Requirement R.3.2.3: Skip writing HTML to preserve idempotency/avoid IO.
+                    # But we MUST update metadata to show we checked it (update downloaded_at).
+                    self._write_metadata(meta_path, source_country, eudract_number, new_hash)
+                    return
             except Exception:
                 # Ignore read errors, just overwrite
                 pass
@@ -132,16 +132,16 @@ class Downloader:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            # Sidecar for metadata
-            url = self.BASE_URL_TEMPLATE.format(id=eudract_number, country=source_country)
-            with open(meta_path, "w", encoding="utf-8") as f:
-                f.write(
-                    f"source_country={source_country}\n"
-                    f"url={url}\n"
-                    f"downloaded_at={time.time()}\n"
-                    f"hash={new_hash}"
-                )
+            self._write_metadata(meta_path, source_country, eudract_number, new_hash)
 
         except IOError as e:
             logger.error(f"Failed to write file for {eudract_number}: {e}")
             raise
+
+    def _write_metadata(self, meta_path: Path, source_country: str, eudract_number: str, file_hash: str) -> None:
+        """Helper to write the .meta sidecar file."""
+        url = self.BASE_URL_TEMPLATE.format(id=eudract_number, country=source_country)
+        with open(meta_path, "w", encoding="utf-8") as f:
+            f.write(
+                f"source_country={source_country}\n" f"url={url}\n" f"downloaded_at={time.time()}\n" f"hash={file_hash}"
+            )

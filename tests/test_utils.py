@@ -11,6 +11,7 @@
 from datetime import date
 from unittest.mock import MagicMock
 
+import pytest
 from bs4 import BeautifulSoup, NavigableString
 from coreason_etl_euctr.utils import clean_text, extract_field_by_label, parse_flexible_date
 
@@ -25,7 +26,8 @@ def test_parse_flexible_date() -> None:
     assert parse_flexible_date("2023-01-01") == date(2023, 1, 1)
     assert parse_flexible_date("01/01/2023") == date(2023, 1, 1)
     assert parse_flexible_date("01.01.2023") == date(2023, 1, 1)
-    assert parse_flexible_date("Invalid") is None
+    with pytest.raises(ValueError):
+        parse_flexible_date("Invalid")
     assert parse_flexible_date(None) is None
 
 
