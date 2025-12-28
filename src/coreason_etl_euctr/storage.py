@@ -10,7 +10,7 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 try:
     import boto3
@@ -102,7 +102,7 @@ class S3StorageBackend(StorageBackend):
         full_key = self._get_full_key(key)
         try:
             response = self.client.get_object(Bucket=self.bucket_name, Key=full_key)
-            body = response["Body"].read()
+            body = cast(bytes, response["Body"].read())
             return body.decode("utf-8")
         except ClientError as e:
             if e.response["Error"]["Code"] == "NoSuchKey":
