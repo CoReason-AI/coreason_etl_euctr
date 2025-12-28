@@ -16,7 +16,7 @@ from coreason_etl_euctr.main import main
 from coreason_etl_euctr.storage import LocalStorageBackend, S3StorageBackend
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def mock_run_bronze() -> Generator[MagicMock, None, None]:
     with patch("coreason_etl_euctr.main.run_bronze") as mock:
         yield mock
