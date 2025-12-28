@@ -143,8 +143,5 @@ class Downloader:
         url = self.BASE_URL_TEMPLATE.format(id=eudract_number, country=source_country)
         with open(meta_path, "w", encoding="utf-8") as f:
             f.write(
-                f"source_country={source_country}\n"
-                f"url={url}\n"
-                f"downloaded_at={time.time()}\n"
-                f"hash={file_hash}"
+                f"source_country={source_country}\n" f"url={url}\n" f"downloaded_at={time.time()}\n" f"hash={file_hash}"
             )

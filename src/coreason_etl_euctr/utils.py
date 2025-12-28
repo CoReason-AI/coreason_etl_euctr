@@ -13,7 +13,6 @@ from datetime import date, datetime
 from typing import Optional, Union
 
 from bs4 import BeautifulSoup, Tag
-from loguru import logger
 
 
 def clean_text(text: str) -> str:
