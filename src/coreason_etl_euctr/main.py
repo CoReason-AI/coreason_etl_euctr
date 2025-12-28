@@ -22,6 +22,8 @@ from coreason_etl_euctr.crawler import Crawler
 from coreason_etl_euctr.downloader import Downloader
 from coreason_etl_euctr.loader import BaseLoader
 from coreason_etl_euctr.parser import Parser
+import time
+
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
@@ -148,25 +150,37 @@ def run_silver(
 
     # R.3.2.3: Incremental Processing (Skip unchanged files)
     silver_watermark = pipeline.get_silver_watermark()
-    current_run_start_time = 0.0
-    import time
-
     current_run_start_time = time.time()
 
     # If this is the first run, watermark is None, so we process everything.
     # If we have a watermark, we skip files older than it.
+    # If we have a cutoff time (start time), we skip files strictly newer than it (future).
     files_to_process = []
-    skipped_count = 0
+    skipped_old_count = 0
+    skipped_future_count = 0
 
     for f in files:
         mtime = f.stat().st_mtime
+
+        # Check Lower Bound (Old files)
         if silver_watermark and mtime <= silver_watermark:
-            skipped_count += 1
+            skipped_old_count += 1
             continue
+
+        # Check Upper Bound (Future/Current Run files)
+        # We use current_run_start_time as the cutoff.
+        # Files created *after* we started this run should be picked up in the NEXT run.
+        if mtime > current_run_start_time:
+            skipped_future_count += 1
+            continue
+
         files_to_process.append(f)
 
-    if skipped_count > 0:
-        logger.info(f"Skipping {skipped_count} unchanged files (mtime <= {silver_watermark}).")
+    if skipped_old_count > 0:
+        logger.info(f"Skipping {skipped_old_count} unchanged files (mtime <= {silver_watermark}).")
+    if skipped_future_count > 0:
+        logger.info(f"Skipping {skipped_future_count} future files (mtime > {current_run_start_time}).")
+
     logger.info(f"Processing {len(files_to_process)} new/modified files.")
 
     for file_path in files_to_process:

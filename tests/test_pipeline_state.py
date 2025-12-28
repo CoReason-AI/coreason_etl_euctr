@@ -158,3 +158,12 @@ def test_get_silver_watermark_invalid_type(temp_state_file: Path) -> None:
 
     pipeline = Pipeline(state_file=temp_state_file)
     assert pipeline.get_silver_watermark() is None
+
+
+def test_get_silver_watermark_none(temp_state_file: Path) -> None:
+    """Test getting silver watermark when it's not set (None)."""
+    pipeline = Pipeline(state_file=temp_state_file)
+    if temp_state_file.exists():
+        temp_state_file.unlink()
+
+    assert pipeline.get_silver_watermark() is None
