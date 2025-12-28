@@ -12,6 +12,7 @@ import argparse
 import io
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Iterator, List, Optional, Sequence
 
@@ -22,8 +23,6 @@ from coreason_etl_euctr.crawler import Crawler
 from coreason_etl_euctr.downloader import Downloader
 from coreason_etl_euctr.loader import BaseLoader
 from coreason_etl_euctr.parser import Parser
-import time
-
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 

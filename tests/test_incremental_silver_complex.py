@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 
 from coreason_etl_euctr.main import run_silver
 from coreason_etl_euctr.models import EuTrial
-from coreason_etl_euctr.pipeline import Pipeline
 
 
 def test_incremental_windowing(tmp_path: Path) -> None:
@@ -50,6 +49,7 @@ def test_incremental_windowing(tmp_path: Path) -> None:
     mock_pipeline.stage_data.side_effect = lambda x: iter([f"header\nrow_{id(x)}\n"])
 
     mock_parser = MagicMock()
+
     # Return dummy trial for any input
     def side_effect_parse(content: str, url_source: str) -> EuTrial:
         return EuTrial(eudract_number=Path(url_source.replace("file://", "")).stem, url_source=url_source)
@@ -72,7 +72,7 @@ def test_incremental_windowing(tmp_path: Path) -> None:
     # Verify Logic
     processed_sources = []
     for call_args in mock_parser.parse_trial.call_args_list:
-        processed_sources.append(call_args.kwargs['url_source'])
+        processed_sources.append(call_args.kwargs["url_source"])
 
     processed_filenames = [Path(s.replace("file://", "")).name for s in processed_sources]
 
@@ -94,7 +94,7 @@ def test_incremental_rollback(tmp_path: Path) -> None:
     f.write_text("content")
 
     mock_pipeline = MagicMock()
-    mock_pipeline.get_silver_watermark.return_value = None # First run
+    mock_pipeline.get_silver_watermark.return_value = None  # First run
 
     mock_loader = MagicMock()
     mock_loader.bulk_load_stream.side_effect = Exception("DB Error")
