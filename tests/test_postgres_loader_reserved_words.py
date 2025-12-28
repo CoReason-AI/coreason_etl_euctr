@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import io
-from typing import IO, cast
+from typing import IO, Generator, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,7 +30,7 @@ class MockStringIteratorIO(io.TextIOBase):
 
 
 @pytest.fixture  # type: ignore[misc]
-def mock_psycopg_connect():
+def mock_psycopg_connect() -> Generator[MagicMock, None, None]:
     with patch("psycopg.connect") as mock:
         yield mock
 
@@ -81,7 +81,7 @@ def test_upsert_quotes_reserved_words(mock_psycopg_connect: MagicMock) -> None:
     Col1 = MagicMock()
     Col1.name = "id"
     Col2 = MagicMock()
-    Col2.name = "desc" # Reserved
+    Col2.name = "desc"  # Reserved
     mock_cursor.description = [Col1, Col2]
 
     loader = PostgresLoader()

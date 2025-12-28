@@ -224,9 +224,7 @@ class PostgresLoader(BaseLoader):
 
                 # Build SET clause: "col" = EXCLUDED."col" for all non-key columns
                 # We exclude conflict keys from the update set usually, or update them too (idempotent).
-                update_assignments = [
-                    f'"{col}" = EXCLUDED."{col}"' for col in columns if col not in conflict_keys
-                ]
+                update_assignments = [f'"{col}" = EXCLUDED."{col}"' for col in columns if col not in conflict_keys]
 
                 # If there are no columns to update (e.g. table only has PKs?), we do NOTHING?
                 # But requirement says "ON CONFLICT UPDATE".
