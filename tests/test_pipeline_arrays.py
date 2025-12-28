@@ -70,3 +70,44 @@ def test_stage_data_list_serialization_empty() -> None:
     # Postgres empty array: {}
     # CSV: "{}"
     assert "{}" in row
+
+
+def test_stage_data_list_serialization_complex_chars() -> None:
+    """
+    Test values with commas, braces, newlines, and tabs.
+    Postgres array syntax requires these to be quoted inside the array literal.
+    CSV requires the whole literal to be quoted.
+    """
+    pipeline = Pipeline()
+    # Elements: "a,b", "{c}", "d\ne", "f\tg"
+    tags = ["a,b", "{c}", "d\ne", "f\tg"]
+    data = [ListModel(id=5, tags=tags)]
+
+    chunks = list(pipeline.stage_data(data))
+    row = chunks[1].strip()
+
+    # We expect something like: 5,"{""a,b"",""{c}"",""d\ne"",""f\tg""}"
+    # Just verify presence of escaped structures
+
+    # Verify comma is preserved
+    assert "a,b" in row
+    # Verify braces are preserved
+    assert "{c}" in row
+    # Verify newlines are preserved (as literals or characters)
+    # The pipeline converts `str(x)` -> which keeps \n.
+    # Postgres COPY CSV format preserves literal newlines inside quoted fields.
+    assert "d\ne" in row or "d\\ne" in row
+
+
+def test_stage_data_list_serialization_unicode() -> None:
+    """Test Unicode characters."""
+    pipeline = Pipeline()
+    tags = ["Adults (≥ 18 years)", "Enfants (2-11 ans)", "😊"]
+    data = [ListModel(id=6, tags=tags)]
+
+    chunks = list(pipeline.stage_data(data))
+    row = chunks[1].strip()
+
+    assert "Adults (≥ 18 years)" in row
+    assert "Enfants (2-11 ans)" in row
+    assert "😊" in row

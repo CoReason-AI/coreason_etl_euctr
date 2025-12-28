@@ -243,9 +243,6 @@ class Parser:
             "F.1.2.5": "Adolescents",
         }
 
-        # We can also search by text if codes vary (different versions of form).
-        # Let's try to find rows where the 3rd column (Value) is "Yes".
-
         found_groups = []
 
         # Find all "Yes" strings
@@ -266,29 +263,16 @@ class Parser:
             if len(cells) < 2:
                 continue
 
-            # Usually: Code | Label | Value
-            # Or: Label | Value
-
             # Check if this row matches an age group
-            # row_text is already extracted above
-
-            # Simple heuristic: Check if row contains known age keywords
-            # and the "Yes" we found is in the value column.
-
-            # Refined strategy:
-            # 1. Identify if we are in Section F (Population).
-            # 2. Iterate rows of that table.
-
-            # Let's try to find the "Population" table first?
-            # Or just rely on row content.
-
-            # If "Yes" is found, check the label in the same row.
-            # We use the full row text for robust matching.
             row_text = row.get_text(" ", strip=True)
-            # "F.1.1 Adults (18-64 years)" -> "Adults (18-64 years)"
 
-            # Check if this label looks like an age group
-            # We can use the age_map keys or values
+            # Extract strict label text for False Positive prevention
+            label_text = ""
+            if len(cells) >= 3:
+                # Assume col 1 is label. If empty, maybe col 0.
+                label_text = cells[1].get_text(strip=True) or cells[0].get_text(strip=True)
+            elif len(cells) == 2:
+                label_text = cells[0].get_text(strip=True)
 
             match = False
             # Sort keys by length descending to match F.1.2.1 before F.1.2
@@ -296,16 +280,36 @@ class Parser:
 
             for code in sorted_codes:
                 name = age_map[code]
-                if code in row_text or name in row_text:
-                    # found a match
-                    # Normalize name
+
+                # Logic:
+                # 1. If strict Code is present, it's a match.
+                # 2. If Name is present, we must ensure it's not a sentence containing the name.
+                #    We check if the label starts with the Name (ignoring case/whitespace).
+
+                if code in row_text:
                     found_groups.append(name)
                     match = True
                     break
 
+                # Name fallback
+                if name in label_text:
+                    # Check for start match to avoid "Is ... Adults?"
+                    # label_text.strip().startswith(name) is usually safe enough
+                    # for "Adults (18-64)" or "Adults" or "F.1.1 Adults".
+                    # However, "F.1.1 Adults" starts with F.1.1.
+                    # But if Code was missing (we are here because `code in row_text` failed?),
+                    # then label probably doesn't have the code.
+                    # Or code matching failed for some reason.
+
+                    # If we matched Name but not Code, and label doesn't start with Name, it's suspect.
+                    # E.g. "Is informed consent... Adults?"
+
+                    if label_text.strip().startswith(name):
+                        found_groups.append(name)
+                        match = True
+                        break
+
             if not match:
-                # If we didn't match a specific code, but the section header is Population, maybe add it?
-                # For now, restrict to known list to avoid noise.
                 pass
 
         return sorted(list(set(found_groups))) if found_groups else None
