@@ -25,6 +25,7 @@ from coreason_etl_euctr.loader import BaseLoader
 from coreason_etl_euctr.parser import Parser
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
+from coreason_etl_euctr.storage import LocalStorageBackend
 
 logger.remove()
 logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"))
@@ -51,7 +52,9 @@ def run_bronze(
         pipeline: Optional injected Pipeline instance (for state management).
     """
     crawler = crawler or Crawler()
-    downloader = downloader or Downloader(output_dir=Path(output_dir))
+    if not downloader:
+        storage = LocalStorageBackend(Path(output_dir))
+        downloader = Downloader(storage_backend=storage)
     pipeline = pipeline or Pipeline()
 
     # R.3.2.2: Retrieve High-Water Mark

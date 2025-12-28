@@ -32,6 +32,18 @@ def test_downloader_initialization(tmp_path: Path) -> None:
     assert downloader.client is not None
 
 
+def test_downloader_default_client(tmp_path: Path) -> None:
+    """Test Downloader initialization without explicit client."""
+    downloader = Downloader(output_dir=tmp_path)
+    assert isinstance(downloader.client, httpx.Client)
+
+
+def test_downloader_init_missing_args() -> None:
+    """Test initialization failure when no storage args provided."""
+    with pytest.raises(ValueError, match="Either output_dir or storage_backend"):
+        Downloader()
+
+
 def test_download_trial_success_primary(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
     """Test successful download from the first priority country (3rd)."""
     downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
@@ -123,23 +135,10 @@ def test_download_hashing_cdc(tmp_path: Path, mock_httpx_client: MagicMock) -> N
         assert meta.exists()
         assert "hash=" in meta.read_text(encoding="utf-8")
 
-        # Ensure minimal delay for timestamp difference (if filesystem resolution allows)
-        # But we mock time.time in _save_to_disk? No, we call time.time() directly.
-        # Let's rely on checking logs or content updates.
-        # Actually, the file is overwritten regardless (as per current impl), but log should appear.
-
         # 2. Second Download (Same Content)
-        # We want to verify it LOGS "unchanged".
-        # Since we use loguru, we can't easily capture logs without configuring sink in test.
-        # However, we can verify that the file is re-written (timestamp updates) but content is same.
-        # The requirement was "skip Parsing and Loading". Downloader just downloads.
-        # But we added logic to DETECT it.
-
         assert downloader.download_trial("123")
 
         # Metadata should be updated/overwritten
-        # Depending on FS resolution, mtime might be same if fast.
-        # But we definitely wrote it.
         assert meta.read_text(encoding="utf-8").count("hash=") == 1
 
 
@@ -202,19 +201,45 @@ def test_download_trial_empty_body(tmp_path: Path, mock_httpx_client: MagicMock)
     assert (tmp_path / "2023-123.html").read_text(encoding="utf-8") == "Data"
 
 
-def test_save_to_disk_io_error(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
+def test_save_to_disk_io_error(mock_httpx_client: MagicMock) -> None:
     """Test handling of IO errors during file save."""
-    downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
+    # Mock storage backend
+    mock_storage = MagicMock()
+    mock_storage.exists.return_value = False
+    mock_storage.write.side_effect = IOError("Disk full")
+
+    downloader = Downloader(storage_backend=mock_storage, client=mock_httpx_client)
 
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.text = "Content"
     mock_httpx_client.get.return_value = mock_response
 
-    # Mock open to raise IOError
-    with patch("builtins.open", side_effect=IOError("Disk full")), patch("time.sleep"):
+    with patch("time.sleep"):
         with pytest.raises(IOError):
             downloader.download_trial("2023-123")
+
+
+def test_save_to_disk_read_error(mock_httpx_client: MagicMock) -> None:
+    """Test handling of errors during metadata read (should overwrite)."""
+    mock_storage = MagicMock()
+    # Simulate existing meta, but read fails
+    mock_storage.exists.return_value = True
+    mock_storage.read.side_effect = IOError("Corrupt file")
+
+    downloader = Downloader(storage_backend=mock_storage, client=mock_httpx_client)
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = "Content"
+    mock_httpx_client.get.return_value = mock_response
+
+    with patch("time.sleep"):
+        result = downloader.download_trial("2023-123")
+
+    assert result is True
+    # Should have called write twice (html and meta) despite read failure
+    assert mock_storage.write.call_count == 2
 
 
 def test_download_trial_5xx_error_fallback(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
