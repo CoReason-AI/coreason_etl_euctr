@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, call
 
 import pytest
-from coreason_etl_euctr.main import StringIteratorIO, hello_world, run_bronze, run_silver
+from coreason_etl_euctr.main import StringIteratorIO, _load_table, hello_world, run_bronze, run_silver
 from pydantic import BaseModel
 
 
@@ -275,3 +275,14 @@ def test_string_iterator_io() -> None:
     # Test buffer usage (partial reads not implemented but let's cover logic)
     stream._buffer = "forced"
     assert stream.read() == "forced"
+
+
+def test_load_table_upsert_missing_keys() -> None:
+    """Test ValueError when conflict_keys is missing in UPSERT mode."""
+    loader = MagicMock()
+    pipeline = MagicMock()
+    pipeline.stage_data.return_value = iter(["header", "row"])
+    data = [MockTrial(eudract_number="123")]
+
+    with pytest.raises(ValueError, match="Conflict keys required for UPSERT"):
+        _load_table(loader, pipeline, data, "test_table", mode="UPSERT", conflict_keys=None)
