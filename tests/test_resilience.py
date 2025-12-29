@@ -36,9 +36,6 @@ class TestCrawlerResilience:
         ]
 
         crawler = Crawler(client=mock_client)
-        # We need to patch the wait strategy to speed up tests or just rely on default if small?
-        # Ideally we patch tenacity.wait.
-        # But for unit test, if we implement it, we can assert call count.
 
         html = crawler.fetch_search_page(page_num=1)
 
@@ -52,12 +49,25 @@ class TestCrawlerResilience:
 
         crawler = Crawler(client=mock_client)
 
-        # With reraise=True, it raises the underlying exception (HTTPStatusError)
         with pytest.raises(httpx.HTTPStatusError):
             crawler.fetch_search_page(page_num=1)
 
-        # Assuming stop_after_attempt(3)
         assert mock_client.get.call_count >= 3
+
+    def test_fetch_search_page_retry_429(self) -> None:
+        """Test that crawler retries on 429."""
+        mock_client = MagicMock(spec=httpx.Client)
+        mock_client.get.side_effect = [
+            mock_response(429),
+            mock_response(200, "<html>Success</html>"),
+        ]
+
+        crawler = Crawler(client=mock_client)
+
+        html = crawler.fetch_search_page(page_num=1)
+
+        assert html == "<html>Success</html>"
+        assert mock_client.get.call_count == 2
 
     def test_fetch_search_page_no_retry_404(self) -> None:
         """Test that crawler fails fast on 404."""
@@ -85,9 +95,8 @@ class TestDownloaderResilience:
         result = downloader.download_trial("2020-123456-78")
 
         assert result is True
-        # Should have called get twice for the same URL (3rd)
         assert mock_client.get.call_count == 2
-        # Verify arguments
+
         calls = mock_client.get.call_args_list
         assert "3rd" in calls[0][0][0]
         assert "3rd" in calls[1][0][0]
@@ -125,8 +134,56 @@ class TestDownloaderResilience:
         assert result is True
         assert mock_client.get.call_count == 2
 
+    def test_download_trial_retry_remote_protocol_error(self, tmp_path: Path) -> None:
+        """Test retry on RemoteProtocolError."""
+        mock_client = MagicMock(spec=httpx.Client)
+        storage = LocalStorageBackend(tmp_path)
 
-def test_is_retryable_error_generic() -> None:
-    """Test is_retryable_error with generic exceptions."""
-    assert is_retryable_error(ValueError("Generic error")) is False
-    assert is_retryable_error(RuntimeError("Runtime error")) is False
+        # '3rd': RemoteProtocolError, 200
+        mock_client.get.side_effect = [
+            httpx.RemoteProtocolError("Bad Protocol"),
+            mock_response(200, "content"),
+        ]
+
+        downloader = Downloader(client=mock_client, storage_backend=storage)
+        result = downloader.download_trial("2020-123456-78")
+
+        assert result is True
+        assert mock_client.get.call_count == 2
+
+
+class TestIsRetryableError:
+    """Explicit tests for the predicate."""
+
+    def test_status_codes(self) -> None:
+        # 5xx
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("500", request=MagicMock(), response=mock_response(500))) is True
+        )
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("503", request=MagicMock(), response=mock_response(503))) is True
+        )
+
+        # 429
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("429", request=MagicMock(), response=mock_response(429))) is True
+        )
+
+        # Non-retryable
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("404", request=MagicMock(), response=mock_response(404))) is False
+        )
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("403", request=MagicMock(), response=mock_response(403))) is False
+        )
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("200", request=MagicMock(), response=mock_response(200))) is False
+        )
+
+    def test_exceptions(self) -> None:
+        assert is_retryable_error(httpx.NetworkError("Net")) is True
+        assert is_retryable_error(httpx.TimeoutException("Timeout")) is True
+        assert is_retryable_error(httpx.RemoteProtocolError("Proto")) is True
+
+        assert is_retryable_error(ValueError("Generic")) is False
+        assert is_retryable_error(RuntimeError("Runtime")) is False

@@ -19,13 +19,16 @@ from bs4 import BeautifulSoup, Tag
 def is_retryable_error(exception: BaseException) -> bool:
     """
     Predicate to determine if an exception should trigger a retry.
-    Retries on NetworkError, TimeoutException, and 5xx Server Errors.
+    Retries on NetworkError, TimeoutException, RemoteProtocolError, 5xx Server Errors, and 429.
     """
-    if isinstance(exception, (httpx.NetworkError, httpx.TimeoutException)):
+    # R.3.4.2 & Resilience Hardening
+    if isinstance(exception, (httpx.NetworkError, httpx.TimeoutException, httpx.RemoteProtocolError)):
         return True
     if isinstance(exception, httpx.HTTPStatusError):
         # Cast to int to ensure strict bool return
-        return 500 <= int(exception.response.status_code) < 600
+        code = int(exception.response.status_code)
+        # Retry on 5xx or 429 (Too Many Requests)
+        return (500 <= code < 600) or (code == 429)
     return False
 
 
