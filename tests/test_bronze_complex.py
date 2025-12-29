@@ -26,7 +26,7 @@ def test_bronze_resume_persistence(tmp_path: Path) -> None:
     mock_pipeline.get_high_water_mark.return_value = None
 
     # Run 1: Crawl Page 1, finds ID "A"
-    mock_crawler.extract_ids.return_value = ["A"]
+    mock_crawler.harvest_ids.return_value = iter(["A"])
 
     run_bronze(
         output_dir=str(output_dir),
@@ -47,7 +47,7 @@ def test_bronze_resume_persistence(tmp_path: Path) -> None:
     mock_downloader.reset_mock()
 
     # Run 2: Crawl Page 2, finds ID "B"
-    mock_crawler.extract_ids.return_value = ["B"]
+    mock_crawler.harvest_ids.return_value = iter(["B"])
 
     run_bronze(
         output_dir=str(output_dir),
@@ -84,7 +84,7 @@ def test_bronze_deduplication_across_runs(tmp_path: Path) -> None:
     (output_dir / "ids.csv").write_text("A\n")
 
     # Run: Crawl Page 1, finds "A" again (and "B")
-    mock_crawler.extract_ids.return_value = ["A", "B"]
+    mock_crawler.harvest_ids.return_value = iter(["A", "B"])
 
     run_bronze(output_dir=str(output_dir), crawler=mock_crawler, downloader=mock_downloader, pipeline=mock_pipeline)
 
@@ -110,7 +110,7 @@ def test_bronze_corrupted_id_file(tmp_path: Path) -> None:
     (output_dir / "ids.csv").write_text("A\n\n   \nB\n")
 
     mock_crawler = MagicMock()
-    mock_crawler.extract_ids.return_value = []  # Find nothing new
+    mock_crawler.harvest_ids.return_value = iter([])  # Find nothing new
     mock_downloader = MagicMock()
 
     run_bronze(output_dir=str(output_dir), crawler=mock_crawler, downloader=mock_downloader)
