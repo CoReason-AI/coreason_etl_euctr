@@ -67,22 +67,39 @@ def run_bronze(
     else:
         logger.info("Performing Full Crawl (No HWM found)")
 
-    all_ids: List[str] = []
+    # R.3.1.1: Store harvested IDs in an intermediate file
+    ids_file = Path(output_dir) / "ids.csv"
+    try:
+        if not ids_file.parent.exists():
+            ids_file.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        logger.warning(f"Could not create directory for ids.csv: {e}")
 
     # Step 1: Crawl
-    for i in range(start_page, start_page + max_pages):
-        try:
-            logger.info(f"Crawling page {i}...")
-            # R.3.2.1: Pass HWM to search
-            html = crawler.fetch_search_page(page_num=i, date_from=date_from)
-            ids = crawler.extract_ids(html)
-            all_ids.extend(ids)
-        except Exception as e:
-            logger.error(f"Failed to crawl page {i}: {e}")
-            continue
+    with open(ids_file, "a", encoding="utf-8") as f:
+        for i in range(start_page, start_page + max_pages):
+            try:
+                logger.info(f"Crawling page {i}...")
+                # R.3.2.1: Pass HWM to search
+                html = crawler.fetch_search_page(page_num=i, date_from=date_from)
+                ids = crawler.extract_ids(html)
+                for mid in ids:
+                    f.write(f"{mid}\n")
+            except Exception as e:
+                logger.error(f"Failed to crawl page {i}: {e}")
+                continue
 
-    # Step 2: Deduplicate
-    unique_ids = list(dict.fromkeys(all_ids))
+    # Step 2: Read and Deduplicate
+    unique_ids: List[str] = []
+    if ids_file.exists():
+        try:
+            with open(ids_file, "r", encoding="utf-8") as f:
+                all_ids = [line.strip() for line in f if line.strip()]
+            unique_ids = list(dict.fromkeys(all_ids))
+        except Exception as e:
+            logger.error(f"Failed to read IDs from {ids_file}: {e}")
+            return
+
     logger.info(f"Found {len(unique_ids)} unique trials to download.")
 
     # Step 3: Download

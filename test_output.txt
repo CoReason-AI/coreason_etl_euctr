@@ -1,0 +1,79 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-8.4.2, pluggy-1.6.0
+rootdir: /app
+configfile: pyproject.toml
+plugins: cov-5.0.0, anyio-4.12.0
+collected 237 items
+
+tests/test_cli.py .....                                                  [  2%]
+tests/test_cli_complex.py ....                                           [  3%]
+tests/test_cli_s3.py ........                                            [  7%]
+tests/test_crawler.py ............                                       [ 12%]
+tests/test_downloader.py .............                                   [ 17%]
+tests/test_downloader_complex.py ...                                     [ 18%]
+tests/test_downloader_edge.py ....                                       [ 20%]
+tests/test_downloader_resilience.py ..                                   [ 21%]
+tests/test_incremental_silver_complex.py ..                              [ 22%]
+tests/test_integration_loader.py ..                                      [ 23%]
+tests/test_loader_interface.py ...                                       [ 24%]
+tests/test_loader_schema_mismatch.py ..                                  [ 25%]
+tests/test_main.py ................                                      [ 32%]
+tests/test_main_edges.py ..                                              [ 32%]
+tests/test_models.py .................                                   [ 40%]
+tests/test_parser.py ......                                              [ 42%]
+tests/test_parser_age_groups.py ........                                 [ 45%]
+tests/test_parser_age_groups_complex.py .....                            [ 48%]
+tests/test_parser_complex_structure.py ....                              [ 49%]
+tests/test_parser_conditions.py .........                                [ 53%]
+tests/test_parser_drugs.py .........                                     [ 57%]
+tests/test_pipeline.py .....                                             [ 59%]
+tests/test_pipeline_arrays.py ......                                     [ 62%]
+tests/test_pipeline_complex.py ....                                      [ 63%]
+tests/test_pipeline_state.py .............                               [ 69%]
+tests/test_pipeline_state_complex.py .....                               [ 71%]
+tests/test_postgres_loader.py .....................                      [ 80%]
+tests/test_postgres_loader_complex.py ..                                 [ 81%]
+tests/test_postgres_loader_reserved_words.py ..                          [ 81%]
+tests/test_postgres_loader_truncate.py ....                              [ 83%]
+tests/test_postgres_loader_truncate_complex.py ......                    [ 86%]
+tests/test_resilience.py ..........                                      [ 90%]
+tests/test_resilience_complex.py .....                                   [ 92%]
+tests/test_storage.py ...                                                [ 93%]
+tests/test_storage_edge.py .....                                         [ 95%]
+tests/test_utils.py ..........                                           [100%]
+
+=============================== warnings summary ===============================
+../home/jules/.cache/pypoetry/virtualenvs/coreason-etl-euctr-9TtSrW0h-py3.12/lib/python3.12/site-packages/testcontainers/core/waiting_utils.py:215
+  /home/jules/.cache/pypoetry/virtualenvs/coreason-etl-euctr-9TtSrW0h-py3.12/lib/python3.12/site-packages/testcontainers/core/waiting_utils.py:215: DeprecationWarning: The @wait_container_is_ready decorator is deprecated and will be removed in a future version. Use structured wait strategies instead: container.waiting_for(HttpWaitStrategy(8080).for_status_code(200)) or container.waiting_for(LogMessageWaitStrategy('ready'))
+    @wait_container_is_ready()
+
+../home/jules/.cache/pypoetry/virtualenvs/coreason-etl-euctr-9TtSrW0h-py3.12/lib/python3.12/site-packages/testcontainers/postgres/__init__.py:90
+  /home/jules/.cache/pypoetry/virtualenvs/coreason-etl-euctr-9TtSrW0h-py3.12/lib/python3.12/site-packages/testcontainers/postgres/__init__.py:90: DeprecationWarning: The @wait_container_is_ready decorator is deprecated and will be removed in a future version. Use structured wait strategies instead: container.waiting_for(HttpWaitStrategy(8080).for_status_code(200)) or container.waiting_for(LogMessageWaitStrategy('ready'))
+    @wait_container_is_ready()
+
+tests/test_integration_loader.py::test_postgres_loader_full_lifecycle
+tests/test_integration_loader.py::test_postgres_loader_complex_cases
+  /app/tests/test_integration_loader.py:52: PytestWarning: Value of environment variable PGPORT type should be str, but got 32769 (type: int); converted to str implicitly
+    monkeypatch.setenv("PGPORT", postgres_container.get_exposed_port(5432))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+
+---------- coverage: platform linux, python 3.12.12-final-0 ----------
+Name                                        Stmts   Miss  Cover   Missing
+-------------------------------------------------------------------------
+src/coreason_etl_euctr/__init__.py              5      0   100%
+src/coreason_etl_euctr/crawler.py              53      0   100%
+src/coreason_etl_euctr/downloader.py           75      0   100%
+src/coreason_etl_euctr/loader.py               19      0   100%
+src/coreason_etl_euctr/main.py                188      0   100%
+src/coreason_etl_euctr/models.py               22      0   100%
+src/coreason_etl_euctr/parser.py              127      0   100%
+src/coreason_etl_euctr/pipeline.py            114      0   100%
+src/coreason_etl_euctr/postgres_loader.py     129      0   100%
+src/coreason_etl_euctr/storage.py              59      0   100%
+src/coreason_etl_euctr/utils.py                52      0   100%
+-------------------------------------------------------------------------
+TOTAL                                         843      0   100%
+
+Required test coverage of 100% reached. Total coverage: 100.00%
+================= 237 passed, 4 warnings in 133.65s (0:02:13) ==================

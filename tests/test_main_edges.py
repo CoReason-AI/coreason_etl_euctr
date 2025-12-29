@@ -9,9 +9,9 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from coreason_etl_euctr.main import run_silver
+from coreason_etl_euctr.main import run_bronze, run_silver
 from coreason_etl_euctr.models import EuTrial
 
 
@@ -48,14 +48,6 @@ def test_run_silver_mixed_results(tmp_path: Path) -> None:
     # Ensure loader was called
     assert mock_loader.bulk_load_stream.called
 
-    # We can't easily check the content of the stream passed to loader without inspecting the generator,
-    # but we can verify that the orchestrator didn't crash and processed the valid ones.
-    # The list passed to pipeline should contain 2 items.
-
-    # However, pipeline is instantiated inside run_silver if not provided.
-    # We didn't provide pipeline, so we can't inspect it directly.
-    # But since we mock the loader, we know it got called.
-
     # Let's mock pipeline too to verify inputs
     mock_pipeline = MagicMock()
     mock_pipeline.get_silver_watermark.return_value = None
@@ -80,8 +72,7 @@ def test_run_silver_mixed_results(tmp_path: Path) -> None:
 
 def test_run_silver_large_number_of_files(tmp_path: Path) -> None:
     """
-    Test iteration over a larger number of files to ensure no resource exhaustion
-    (though purely mocked here, it ensures loop logic is sound).
+    Test iteration over a larger number of files to ensure no resource exhaustion.
     """
     d = tmp_path / "bronze"
     d.mkdir()
@@ -105,3 +96,54 @@ def test_run_silver_large_number_of_files(tmp_path: Path) -> None:
     # Verify all 50 were collected
     args, _ = mock_pipeline.stage_data.call_args
     assert len(args[0]) == 50
+
+
+def test_run_bronze_mkdir_failure(tmp_path: Path) -> None:
+    """Test defensive code when mkdir fails."""
+    mock_crawler = MagicMock()
+    mock_downloader = MagicMock()
+
+    output_dir = tmp_path / "bronze"
+    # Ensure it exists before patching, so open() works later (if we let it)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # We patch Path.mkdir to raise exception
+    with patch("pathlib.Path.mkdir", side_effect=PermissionError("Boom")):
+        # We also mock open because run_bronze calls open on ids.csv
+        # and checking ids_file.parent.exists() might be tricky if we don't mock it.
+        # But actually run_bronze does:
+        # if not ids_file.parent.exists():
+        #    ids_file.parent.mkdir(...)
+        # So we need exists() to return False to trigger mkdir.
+
+        with patch("pathlib.Path.exists", return_value=False):
+             with patch("builtins.open", new_callable=MagicMock):
+                run_bronze(output_dir=str(output_dir), crawler=mock_crawler, downloader=mock_downloader)
+
+    # If we reached here without crash, success. Logic logs warning.
+
+
+def test_run_bronze_read_ids_failure(tmp_path: Path) -> None:
+    """Test failure when reading the intermediate IDs file."""
+    mock_crawler = MagicMock()
+    mock_downloader = MagicMock()
+
+    output_dir = tmp_path / "bronze"
+    output_dir.mkdir()
+    ids_file = output_dir / "ids.csv"
+    ids_file.write_text("ID1")
+
+    # We want write to succeed (real file) but read to fail.
+    # We can patch open to fail only when mode='r'.
+
+    real_open = open
+    def side_effect(file, mode="r", *args, **kwargs):
+        if "r" in mode and str(file) == str(ids_file):
+            raise OSError("Read Error")
+        return real_open(file, mode, *args, **kwargs)
+
+    with patch("builtins.open", side_effect=side_effect):
+        run_bronze(output_dir=str(output_dir), crawler=mock_crawler, downloader=mock_downloader)
+
+    # Should log error and return (skipping download)
+    assert mock_downloader.download_trial.call_count == 0
