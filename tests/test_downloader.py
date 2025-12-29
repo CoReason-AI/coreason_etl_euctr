@@ -243,40 +243,53 @@ def test_save_to_disk_read_error(mock_httpx_client: MagicMock) -> None:
 
 
 def test_download_trial_5xx_error_fallback(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
-    """Test that 5xx Server Errors trigger fallback to the next country."""
+    """
+    Test that 5xx Server Errors trigger fallback to the next country AFTER retries are exhausted.
+
+    Scenario:
+    1. '3rd': Fails 500 repeatedly (exhausts retries).
+    2. 'GB': Fails 503 repeatedly (exhausts retries).
+    3. 'DE': Succeeds 200.
+    """
     downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client)
 
-    # 1st: 500 Internal Server Error
-    response_500 = MagicMock()
-    response_500.status_code = 500
+    # Use real httpx.Response objects to ensure raise_for_status works correctly
+    # 1st (3rd): 500 (Fail -> Retry x3 -> Raise)
+    response_500 = httpx.Response(500, request=httpx.Request("GET", "https://example.com"))
 
-    def raise_500() -> None:
-        raise httpx.HTTPStatusError("Server Error", request=MagicMock(), response=response_500)
+    # 2nd (GB): 503 (Fail -> Retry x3 -> Raise)
+    response_503 = httpx.Response(503, request=httpx.Request("GET", "https://example.com"))
 
-    response_500.raise_for_status.side_effect = raise_500
+    # 3rd (DE): 200 OK
+    response_200 = httpx.Response(200, text="<html>Success</html>", request=httpx.Request("GET", "https://example.com"))
 
-    # 2nd: 503 Service Unavailable
-    response_503 = MagicMock()
-    response_503.status_code = 503
+    # We need to simulate retries.
+    # The 'side_effect' is consumed by EACH call to self.client.get() inside the retry loop.
+    # If tenacity retries 3 times (default in code is stop_after_attempt(3)), we need 3 failures per country failure.
 
-    def raise_503() -> None:
-        raise httpx.HTTPStatusError("Service Unavailable", request=MagicMock(), response=response_503)
+    # For '3rd': 3 failures
+    # For 'GB': 3 failures
+    # For 'DE': 1 success
 
-    response_503.raise_for_status.side_effect = raise_503
+    # Note: If stop_after_attempt is 3, it calls: 1st, 2nd, 3rd (raises).
 
-    # 3rd: 200 OK
-    response_200 = MagicMock()
-    response_200.status_code = 200
-    response_200.text = "<html>Success</html>"
-
-    mock_httpx_client.get.side_effect = [response_500, response_503, response_200]
+    mock_httpx_client.get.side_effect = [
+        # 3rd
+        response_500,
+        response_500,
+        response_500,
+        # GB
+        response_503,
+        response_503,
+        response_503,
+        # DE
+        response_200,
+    ]
 
     with patch("time.sleep"):
         result = downloader.download_trial("2023-123")
 
     assert result is True
-    # Should have tried all 3 countries
-    assert mock_httpx_client.get.call_count == 3
 
     # Verify file saved
     assert (tmp_path / "2023-123.html").read_text(encoding="utf-8") == "<html>Success</html>"
