@@ -22,8 +22,8 @@ def test_hello_world() -> None:
     assert hello_world() == "Hello World!"
 
 
-def test_run_bronze_flow() -> None:
-    """Test the orchestration flow of run_bronze with HWM logic."""
+def test_run_bronze_flow(tmp_path: Path) -> None:
+    """Test the orchestration flow of run_bronze with HWM logic using real temp files."""
     mock_crawler = MagicMock()
     mock_downloader = MagicMock()
     mock_pipeline = MagicMock()
@@ -37,7 +37,7 @@ def test_run_bronze_flow() -> None:
     mock_downloader.download_trial.return_value = True
 
     run_bronze(
-        output_dir="tmp",
+        output_dir=str(tmp_path),
         start_page=1,
         max_pages=2,
         crawler=mock_crawler,
@@ -51,6 +51,13 @@ def test_run_bronze_flow() -> None:
         [call(page_num=1, date_from="2023-01-01"), call(page_num=2, date_from="2023-01-01")]
     )
 
+    # Verify intermediate file was created and populated
+    ids_file = tmp_path / "ids.csv"
+    assert ids_file.exists()
+    content = ids_file.read_text(encoding="utf-8")
+    assert "ID1" in content
+    assert "ID3" in content
+
     # Verify Deduplication (ID1, ID2, ID3 = 3 unique)
     assert mock_downloader.download_trial.call_count == 3
     mock_downloader.download_trial.assert_has_calls([call("ID1"), call("ID2"), call("ID3")], any_order=True)
@@ -59,7 +66,7 @@ def test_run_bronze_flow() -> None:
     mock_pipeline.set_high_water_mark.assert_called_once()
 
 
-def test_run_bronze_no_hwm() -> None:
+def test_run_bronze_no_hwm(tmp_path: Path) -> None:
     """Test run_bronze when no High-Water Mark is found (Full Crawl)."""
     mock_crawler = MagicMock()
     mock_downloader = MagicMock()
@@ -69,7 +76,13 @@ def test_run_bronze_no_hwm() -> None:
     mock_crawler.fetch_search_page.return_value = "<html>...</html>"
     mock_crawler.extract_ids.return_value = []
 
-    run_bronze(max_pages=1, crawler=mock_crawler, downloader=mock_downloader, pipeline=mock_pipeline)
+    run_bronze(
+        output_dir=str(tmp_path),
+        max_pages=1,
+        crawler=mock_crawler,
+        downloader=mock_downloader,
+        pipeline=mock_pipeline,
+    )
 
     # Verify Crawler called without date_from
     mock_crawler.fetch_search_page.assert_called_with(page_num=1, date_from=None)
@@ -95,7 +108,7 @@ def test_run_bronze_default_downloader(tmp_path: Path) -> None:
         assert kwargs["storage_backend"].base_path == output_dir
 
 
-def test_run_bronze_handles_crawl_exception() -> None:
+def test_run_bronze_handles_crawl_exception(tmp_path: Path) -> None:
     """Test that crawler failure on one page doesn't stop the whole process."""
     mock_crawler = MagicMock()
     mock_downloader = MagicMock()
@@ -104,13 +117,18 @@ def test_run_bronze_handles_crawl_exception() -> None:
     mock_crawler.fetch_search_page.side_effect = [Exception("Net Error"), "<html>OK</html>"]
     mock_crawler.extract_ids.return_value = ["ID1"]
 
-    run_bronze(max_pages=2, crawler=mock_crawler, downloader=mock_downloader)
+    run_bronze(
+        output_dir=str(tmp_path),
+        max_pages=2,
+        crawler=mock_crawler,
+        downloader=mock_downloader,
+    )
 
     # Should still try to download ID1
     mock_downloader.download_trial.assert_called_once_with("ID1")
 
 
-def test_run_bronze_handles_download_exception() -> None:
+def test_run_bronze_handles_download_exception(tmp_path: Path) -> None:
     """Test that download failure doesn't stop the loop."""
     mock_crawler = MagicMock()
     mock_downloader = MagicMock()
@@ -119,7 +137,12 @@ def test_run_bronze_handles_download_exception() -> None:
     # ID1 fails, ID2 succeeds
     mock_downloader.download_trial.side_effect = [Exception("Disk Full"), True]
 
-    run_bronze(max_pages=1, crawler=mock_crawler, downloader=mock_downloader)
+    run_bronze(
+        output_dir=str(tmp_path),
+        max_pages=1,
+        crawler=mock_crawler,
+        downloader=mock_downloader,
+    )
 
     assert mock_downloader.download_trial.call_count == 2
 
