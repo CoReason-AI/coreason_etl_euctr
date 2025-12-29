@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from coreason_etl_euctr.main import run_bronze, run_silver
@@ -117,7 +118,7 @@ def test_run_bronze_mkdir_failure(tmp_path: Path) -> None:
         # So we need exists() to return False to trigger mkdir.
 
         with patch("pathlib.Path.exists", return_value=False):
-             with patch("builtins.open", new_callable=MagicMock):
+            with patch("builtins.open", new_callable=MagicMock):
                 run_bronze(output_dir=str(output_dir), crawler=mock_crawler, downloader=mock_downloader)
 
     # If we reached here without crash, success. Logic logs warning.
@@ -137,7 +138,8 @@ def test_run_bronze_read_ids_failure(tmp_path: Path) -> None:
     # We can patch open to fail only when mode='r'.
 
     real_open = open
-    def side_effect(file, mode="r", *args, **kwargs):
+
+    def side_effect(file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
         if "r" in mode and str(file) == str(ids_file):
             raise OSError("Read Error")
         return real_open(file, mode, *args, **kwargs)
