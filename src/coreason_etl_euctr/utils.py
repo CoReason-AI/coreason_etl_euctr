@@ -24,7 +24,8 @@ def is_retryable_error(exception: BaseException) -> bool:
     if isinstance(exception, httpx.NetworkError):
         return True
     if isinstance(exception, httpx.HTTPStatusError):
-        return 500 <= exception.response.status_code < 600
+        # Cast to int to ensure strict bool return
+        return 500 <= int(exception.response.status_code) < 600
     return False
 
 

@@ -102,7 +102,7 @@ class Downloader:
         logger.error(f"Failed to download trial {eudract_number} from any source.")
         return False
 
-    @retry(
+    @retry(  # type: ignore[misc]
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception(is_retryable_error),

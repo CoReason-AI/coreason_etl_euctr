@@ -16,6 +16,7 @@ import pytest
 from coreason_etl_euctr.crawler import Crawler
 from coreason_etl_euctr.downloader import Downloader
 from coreason_etl_euctr.storage import LocalStorageBackend
+from coreason_etl_euctr.utils import is_retryable_error
 
 
 # Mock response helper
@@ -123,3 +124,9 @@ class TestDownloaderResilience:
 
         assert result is True
         assert mock_client.get.call_count == 2
+
+
+def test_is_retryable_error_generic() -> None:
+    """Test is_retryable_error with generic exceptions."""
+    assert is_retryable_error(ValueError("Generic error")) is False
+    assert is_retryable_error(RuntimeError("Runtime error")) is False
