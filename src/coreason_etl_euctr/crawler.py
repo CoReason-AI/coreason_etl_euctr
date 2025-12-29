@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import time
-from typing import List, Optional
+from typing import Generator, List, Optional
 
 import httpx
 from bs4 import BeautifulSoup, Comment
@@ -76,6 +76,43 @@ class Crawler:
         except httpx.HTTPError as e:
             logger.error(f"Failed to fetch page {page_num}: {e}")
             raise
+
+    def harvest_ids(
+        self,
+        start_page: int = 1,
+        max_pages: int = 1,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+    ) -> Generator[str, None, None]:
+        """
+        Iterate through search pages and yield EudraCT Numbers.
+        Handles pagination and date filtering (CDC).
+
+        Args:
+            start_page: The starting page number.
+            max_pages: Maximum number of pages to crawl.
+            date_from: Start date for CDC (YYYY-MM-DD).
+            date_to: End date for CDC (YYYY-MM-DD).
+
+        Yields:
+            EudraCT Numbers as strings.
+        """
+        end_page = start_page + max_pages
+        for i in range(start_page, end_page):
+            try:
+                html = self.fetch_search_page(page_num=i, date_from=date_from, date_to=date_to)
+                ids = self.extract_ids(html)
+
+                if not ids:
+                    logger.warning(f"No IDs found on page {i}. Stopping harvest.")
+                    break
+
+                for trial_id in ids:
+                    yield trial_id
+
+            except Exception as e:
+                logger.error(f"Error harvesting page {i}: {e}")
+                continue
 
     def extract_ids(self, html_content: str) -> List[str]:
         """
