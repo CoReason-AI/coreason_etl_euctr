@@ -157,16 +157,28 @@ class TestIsRetryableError:
 
     def test_status_codes(self) -> None:
         # 5xx
-        assert is_retryable_error(httpx.HTTPStatusError("500", request=MagicMock(), response=mock_response(500))) is True
-        assert is_retryable_error(httpx.HTTPStatusError("503", request=MagicMock(), response=mock_response(503))) is True
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("500", request=MagicMock(), response=mock_response(500))) is True
+        )
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("503", request=MagicMock(), response=mock_response(503))) is True
+        )
 
         # 429
-        assert is_retryable_error(httpx.HTTPStatusError("429", request=MagicMock(), response=mock_response(429))) is True
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("429", request=MagicMock(), response=mock_response(429))) is True
+        )
 
         # Non-retryable
-        assert is_retryable_error(httpx.HTTPStatusError("404", request=MagicMock(), response=mock_response(404))) is False
-        assert is_retryable_error(httpx.HTTPStatusError("403", request=MagicMock(), response=mock_response(403))) is False
-        assert is_retryable_error(httpx.HTTPStatusError("200", request=MagicMock(), response=mock_response(200))) is False
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("404", request=MagicMock(), response=mock_response(404))) is False
+        )
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("403", request=MagicMock(), response=mock_response(403))) is False
+        )
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("200", request=MagicMock(), response=mock_response(200))) is False
+        )
 
     def test_exceptions(self) -> None:
         assert is_retryable_error(httpx.NetworkError("Net")) is True
