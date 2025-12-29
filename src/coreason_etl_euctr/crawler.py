@@ -9,7 +9,8 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import time
-from typing import List, Optional
+import unicodedata
+from typing import Generator, List, Optional
 
 import httpx
 from bs4 import BeautifulSoup, Comment
@@ -77,6 +78,43 @@ class Crawler:
             logger.error(f"Failed to fetch page {page_num}: {e}")
             raise
 
+    def harvest_ids(
+        self,
+        start_page: int = 1,
+        max_pages: int = 1,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+    ) -> Generator[str, None, None]:
+        """
+        Iterate through search pages and yield EudraCT Numbers.
+        Handles pagination and date filtering (CDC).
+
+        Args:
+            start_page: The starting page number.
+            max_pages: Maximum number of pages to crawl.
+            date_from: Start date for CDC (YYYY-MM-DD).
+            date_to: End date for CDC (YYYY-MM-DD).
+
+        Yields:
+            EudraCT Numbers as strings.
+        """
+        end_page = start_page + max_pages
+        for i in range(start_page, end_page):
+            try:
+                html = self.fetch_search_page(page_num=i, date_from=date_from, date_to=date_to)
+                ids = self.extract_ids(html)
+
+                if not ids:
+                    logger.warning(f"No IDs found on page {i}. Stopping harvest.")
+                    break
+
+                for trial_id in ids:
+                    yield trial_id
+
+            except Exception as e:
+                logger.error(f"Error harvesting page {i}: {e}")
+                continue
+
     def extract_ids(self, html_content: str) -> List[str]:
         """
         Parse the search result HTML to extract EudraCT Numbers.
@@ -90,8 +128,12 @@ class Crawler:
         soup = BeautifulSoup(html_content, "html.parser")
         ids: List[str] = []
 
+        # Helper to normalize text (handles non-breaking spaces)
+        def normalize(t: str) -> str:
+            return unicodedata.normalize("NFKC", t)
+
         # Find all elements that contain the label text "EudraCT Number:"
-        labels = soup.find_all(string=lambda text: "EudraCT Number:" in text if text else False)
+        labels = soup.find_all(string=lambda text: "EudraCT Number:" in normalize(text) if text else False)
 
         for label in labels:
             # Ignore comments
@@ -104,7 +146,7 @@ class Crawler:
 
             # Case 1: Label and Value are in the same text node / element
             # Example: <span>EudraCT Number: 2004-000015-26</span>
-            full_text = parent.get_text(strip=True)
+            full_text = normalize(parent.get_text(strip=True))
             if "EudraCT Number:" in full_text and len(full_text) > len("EudraCT Number:"):
                 # Extract value from the same string
                 cleaned = full_text.replace("EudraCT Number:", "").strip()
@@ -124,7 +166,8 @@ class Crawler:
                 next_node = next_node.next_sibling
 
             if next_node:
-                val = next_node.get_text(strip=True) if hasattr(next_node, "get_text") else str(next_node).strip()
+                raw_val = next_node.get_text(strip=True) if hasattr(next_node, "get_text") else str(next_node).strip()
+                val = normalize(raw_val)
                 if val:
                     ids.append(val.split()[0])
 

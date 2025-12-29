@@ -175,7 +175,5 @@ class Downloader:
     def _write_metadata(self, meta_key: str, source_country: str, eudract_number: str, file_hash: str) -> None:
         """Helper to write the .meta sidecar file."""
         url = self.BASE_URL_TEMPLATE.format(id=eudract_number, country=source_country)
-        meta_content = (
-            f"source_country={source_country}\n" f"url={url}\n" f"downloaded_at={time.time()}\n" f"hash={file_hash}"
-        )
+        meta_content = f"source_country={source_country}\nurl={url}\ndownloaded_at={time.time()}\nhash={file_hash}"
         self.storage.write(meta_key, meta_content)
