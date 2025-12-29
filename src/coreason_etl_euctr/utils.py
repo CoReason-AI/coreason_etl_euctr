@@ -12,7 +12,21 @@ import re
 from datetime import date, datetime
 from typing import Optional, Union
 
+import httpx
 from bs4 import BeautifulSoup, Tag
+
+
+def is_retryable_error(exception: BaseException) -> bool:
+    """
+    Predicate to determine if an exception should trigger a retry.
+    Retries on NetworkError, TimeoutException, and 5xx Server Errors.
+    """
+    if isinstance(exception, (httpx.NetworkError, httpx.TimeoutException)):
+        return True
+    if isinstance(exception, httpx.HTTPStatusError):
+        # Cast to int to ensure strict bool return
+        return 500 <= int(exception.response.status_code) < 600
+    return False
 
 
 def clean_text(text: str) -> str:

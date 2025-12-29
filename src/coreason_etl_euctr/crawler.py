@@ -14,6 +14,9 @@ from typing import List, Optional
 import httpx
 from bs4 import BeautifulSoup, Comment
 from loguru import logger
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
+from coreason_etl_euctr.utils import is_retryable_error
 
 
 class Crawler:
@@ -32,6 +35,12 @@ class Crawler:
         """
         self.client = client or httpx.Client(headers={"User-Agent": "Coreason-ETL-Crawler/1.0"}, follow_redirects=True)
 
+    @retry(  # type: ignore[misc]
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception(is_retryable_error),
+        reraise=True,
+    )
     def fetch_search_page(
         self, page_num: int = 1, query: str = "", date_from: Optional[str] = None, date_to: Optional[str] = None
     ) -> str:

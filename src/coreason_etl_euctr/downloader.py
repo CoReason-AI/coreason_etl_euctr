@@ -15,8 +15,10 @@ from typing import List, Optional, Union
 
 import httpx
 from loguru import logger
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from coreason_etl_euctr.storage import LocalStorageBackend, StorageBackend
+from coreason_etl_euctr.utils import is_retryable_error
 
 
 class Downloader:
@@ -74,17 +76,16 @@ class Downloader:
 
             try:
                 logger.debug(f"Attempting to fetch trial {eudract_number} from {country}...")
-                response = self.client.get(url)
 
-                # Check for 404 explicitly or other errors
-                if response.status_code == 404:
+                # Use helper with retry
+                response = self._fetch_with_retry(url)
+
+                if response is None:
+                    # Logic for 404 (was handled inside helper but returns None or similar)
                     logger.debug(f"Trial {eudract_number} not found in {country} (404).")
                     continue
 
-                response.raise_for_status()
-
-                # Some sites return soft 404s or empty pages, but for now we assume 200 OK with content is good.
-                # The FRD says: "If 404/Empty, fallback..."
+                # Some sites return soft 404s or empty pages
                 if not response.text.strip():
                     logger.warning(f"Trial {eudract_number} in {country} returned empty body.")
                     continue
@@ -100,6 +101,28 @@ class Downloader:
 
         logger.error(f"Failed to download trial {eudract_number} from any source.")
         return False
+
+    @retry(  # type: ignore[misc]
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception(is_retryable_error),
+        reraise=True,
+    )
+    def _fetch_with_retry(self, url: str) -> Optional[httpx.Response]:
+        """
+        Fetch URL with retry logic for 5xx/Network errors.
+        Returns Response if 200, None if 404.
+        Raises HTTPStatusError for 5xx (triggering retry) or other errors.
+        """
+        response = self.client.get(url)
+
+        # Check for 404 explicitly to fail fast (no retry)
+        if response.status_code == 404:
+            return None
+
+        # Raise for 5xx (triggers retry) or other 4xx (raises, no retry)
+        response.raise_for_status()
+        return response
 
     def _save_content(self, eudract_number: str, content: str, source_country: str) -> None:
         """
