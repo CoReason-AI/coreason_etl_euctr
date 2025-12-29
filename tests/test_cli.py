@@ -18,7 +18,8 @@ def test_cli_crawl_defaults() -> None:
     with patch("sys.argv", ["euctr-etl", "crawl"]), patch("coreason_etl_euctr.main.run_bronze") as mock_run:
         ret = main()
         assert ret == 0
-        mock_run.assert_called_once_with(output_dir="data/bronze", start_page=1, max_pages=1)
+        # Updated to include storage_backend default (None)
+        mock_run.assert_called_once_with(output_dir="data/bronze", start_page=1, max_pages=1, storage_backend=None)
 
 
 def test_cli_crawl_custom_args() -> None:
@@ -41,7 +42,8 @@ def test_cli_crawl_custom_args() -> None:
     ):
         ret = main()
         assert ret == 0
-        mock_run.assert_called_once_with(output_dir="custom/dir", start_page=5, max_pages=10)
+        # Updated to include storage_backend default (None)
+        mock_run.assert_called_once_with(output_dir="custom/dir", start_page=5, max_pages=10, storage_backend=None)
 
 
 def test_cli_load_defaults() -> None:
