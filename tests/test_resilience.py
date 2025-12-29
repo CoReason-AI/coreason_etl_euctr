@@ -125,8 +125,53 @@ class TestDownloaderResilience:
         assert result is True
         assert mock_client.get.call_count == 2
 
+    def test_download_trial_retry_remote_protocol_error(self, tmp_path: Path) -> None:
+        """Test retry on RemoteProtocolError."""
+        mock_client = MagicMock(spec=httpx.Client)
+        storage = LocalStorageBackend(tmp_path)
+
+        # '3rd': RemoteProtocolError, 200
+        mock_client.get.side_effect = [
+            httpx.RemoteProtocolError("Bad Proto", request=httpx.Request("GET", "http://test")),
+            mock_response(200, "content"),
+        ]
+
+        downloader = Downloader(client=mock_client, storage_backend=storage)
+        result = downloader.download_trial("2020-123456-78")
+
+        assert result is True
+        assert mock_client.get.call_count == 2
+
+    def test_download_trial_retry_429(self, tmp_path: Path) -> None:
+        """Test retry on 429 Too Many Requests."""
+        mock_client = MagicMock(spec=httpx.Client)
+        storage = LocalStorageBackend(tmp_path)
+
+        # '3rd': 429, 200
+        mock_client.get.side_effect = [mock_response(429), mock_response(200, "content")]
+
+        downloader = Downloader(client=mock_client, storage_backend=storage)
+        result = downloader.download_trial("2020-123456-78")
+
+        assert result is True
+        assert mock_client.get.call_count == 2
+
 
 def test_is_retryable_error_generic() -> None:
     """Test is_retryable_error with generic exceptions."""
     assert is_retryable_error(ValueError("Generic error")) is False
     assert is_retryable_error(RuntimeError("Runtime error")) is False
+
+
+def test_is_retryable_error_status_codes() -> None:
+    """Test is_retryable_error with specific status codes."""
+    # 5xx should be True
+    assert is_retryable_error(httpx.HTTPStatusError("500", request=MagicMock(), response=mock_response(500))) is True
+    assert is_retryable_error(httpx.HTTPStatusError("503", request=MagicMock(), response=mock_response(503))) is True
+
+    # 429 should be True
+    assert is_retryable_error(httpx.HTTPStatusError("429", request=MagicMock(), response=mock_response(429))) is True
+
+    # 404/403 should be False
+    assert is_retryable_error(httpx.HTTPStatusError("404", request=MagicMock(), response=mock_response(404))) is False
+    assert is_retryable_error(httpx.HTTPStatusError("403", request=MagicMock(), response=mock_response(403))) is False
