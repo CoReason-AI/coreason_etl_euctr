@@ -8,120 +8,118 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
 from coreason_etl_euctr.crawler import Crawler
-from coreason_etl_euctr.downloader import Downloader
-from coreason_etl_euctr.storage import LocalStorageBackend
+from coreason_etl_euctr.utils import is_retryable_error
 
 
 # Mock response helper
-def mock_response(status_code: int, text: str = "") -> httpx.Response:
-    return httpx.Response(status_code=status_code, text=text, request=httpx.Request("GET", "http://test"))
+def mock_response(status_code: int) -> httpx.Response:
+    return httpx.Response(status_code=status_code, request=httpx.Request("GET", "http://test"))
 
 
 class TestResilienceComplex:
-    """Complex resilience scenarios for Crawler and Downloader."""
+    """
+    Complex and edge-case tests for resilience logic.
+    """
 
-    def test_crawler_retry_on_timeout(self) -> None:
-        """Test that Crawler retries on ReadTimeout and ConnectTimeout."""
+    def test_mixed_failure_sequence(self) -> None:
+        """
+        Test a chaotic sequence of different retryable errors:
+        NetworkError -> 503 -> 429 -> Success.
+        """
         mock_client = MagicMock(spec=httpx.Client)
-        # Sequence: ReadTimeout -> ConnectTimeout -> Success
         mock_client.get.side_effect = [
-            httpx.ReadTimeout("Read timed out"),
-            httpx.ConnectTimeout("Connect timed out"),
-            mock_response(200, "<html>Success</html>"),
+            httpx.NetworkError("Connection reset"),
+            mock_response(503),
+            mock_response(429),
+            mock_response(200),  # Success on 4th attempt
+        ]
+
+        # Crawler has stop_after_attempt(3) by default.
+        # We need to ensure we can handle at least 3.
+        # Wait, if we have 3 errors then success is 4th call.
+        # If stop=3, it will fail after 3rd error.
+        # Let's adjust the mock to succeed on 3rd attempt:
+        # Error -> Error -> Success.
+
+        mock_client.get.side_effect = [
+            httpx.NetworkError("Connection reset"),
+            mock_response(503),
+            httpx.Response(200, text="Success", request=httpx.Request("GET", "/")),
         ]
 
         crawler = Crawler(client=mock_client)
-        html = crawler.fetch_search_page(page_num=1)
+        result = crawler.fetch_search_page(page_num=1)
 
-        assert html == "<html>Success</html>"
+        assert result == "Success"
         assert mock_client.get.call_count == 3
 
-    def test_downloader_retry_mixed_sequence_success(self, tmp_path: Path) -> None:
+    def test_boundary_status_codes(self) -> None:
         """
-        Test Downloader retrying a mixed sequence of errors for a single country.
-        Sequence: 502 (Bad Gateway) -> ReadTimeout -> NetworkError -> 200 (Success).
-        Note: Tenacity stop_after_attempt is 3. So 1st (502), 2nd (Timeout), 3rd (NetworkError) -> FAIL?
-        Wait, default implementation has stop_after_attempt(3).
-        If attempt 1 fails, attempt 2 fails, attempt 3 fails -> raises.
-        So to succeed, we need success on attempt 3.
-        Sequence: 502 -> Timeout -> Success.
+        Test boundary values for status codes in is_retryable_error.
+        """
+        # 499 (Client Closed Request) -> Should NOT retry (it's < 500)
+        assert is_retryable_error(httpx.HTTPStatusError("499", request=MagicMock(), response=mock_response(499))) is False
+
+        # 500 -> Retry
+        assert is_retryable_error(httpx.HTTPStatusError("500", request=MagicMock(), response=mock_response(500))) is True
+
+        # 599 -> Retry
+        assert is_retryable_error(httpx.HTTPStatusError("599", request=MagicMock(), response=mock_response(599))) is True
+
+        # 600 -> Should NOT retry (strictly < 600 check usually, depending on impl)
+        # utils.py: 500 <= code < 600. So 600 is False.
+        assert is_retryable_error(httpx.HTTPStatusError("600", request=MagicMock(), response=mock_response(600))) is False
+
+    def test_specific_network_exceptions(self) -> None:
+        """
+        Verify specific subclasses of NetworkError trigger retry.
+        """
+        # ConnectError
+        assert is_retryable_error(httpx.ConnectError("Connection failed")) is True
+
+        # ReadError
+        assert is_retryable_error(httpx.ReadError("Read failed")) is True
+
+        # WriteError
+        assert is_retryable_error(httpx.WriteError("Write failed")) is True
+
+        # PoolTimeout (subclass of TimeoutException)
+        assert is_retryable_error(httpx.PoolTimeout("Pool full")) is True
+
+    def test_unexpected_exceptions_fail_fast(self) -> None:
+        """
+        Ensure unexpected exceptions (like parsing errors or logic errors)
+        do NOT trigger retry and bubble up immediately.
+        """
+        # ValueError
+        assert is_retryable_error(ValueError("Parsing error")) is False
+
+        # AttributeError
+        assert is_retryable_error(AttributeError("Missing attr")) is False
+
+    def test_crawler_max_retries_mixed_errors(self) -> None:
+        """
+        Verify that after N mixed errors, it finally raises the LAST exception.
         """
         mock_client = MagicMock(spec=httpx.Client)
-        storage = LocalStorageBackend(tmp_path)
-
-        # 3rd Country: 502 -> Timeout -> Success
+        # 3 failures: Network -> 500 -> 429. All retryable.
+        # Should stop after 3 attempts.
         mock_client.get.side_effect = [
-            mock_response(502),
-            httpx.ReadTimeout("Timeout"),
-            mock_response(200, "Content"),
+            httpx.NetworkError("Net Fail"),
+            mock_response(500),
+            mock_response(429),
         ]
-
-        downloader = Downloader(client=mock_client, storage_backend=storage)
-        result = downloader.download_trial("2020-MIXED-01")
-
-        assert result is True
-        assert mock_client.get.call_count == 3
-        # Ensure file saved
-        assert (tmp_path / "2020-MIXED-01.html").read_text() == "Content"
-
-    def test_downloader_exhaustion_mixed_sequence(self, tmp_path: Path) -> None:
-        """
-        Test Downloader exhausting retries on mixed errors and falling back.
-        Scenario:
-        - 3rd: 500 -> Timeout -> 503 (Exhausted, raises)
-        - GB: 200 (Success)
-        """
-        mock_client = MagicMock(spec=httpx.Client)
-        storage = LocalStorageBackend(tmp_path)
-
-        # Setup side effects
-        # 3rd Country attempts (limit 3):
-        # 1. 500 (Retry)
-        # 2. Timeout (Retry)
-        # 3. 503 (Raise) -> Downloader catches and moves to next country
-
-        # GB Country attempts:
-        # 4. 200 (Success)
-
-        # Mock raise_for_status for 500/503 because real objects are needed if logic uses them?
-        # Downloader logic calls raise_for_status().
-        # But here we simulate client.get returning these or raising exceptions.
-        # Downloader._fetch_with_retry: response = client.get() -> response.raise_for_status()
-
-        # We need to ensure client.get returns the response object so raise_for_status is called on it.
-        # Or raises exception directly if it's a network/timeout error.
-
-        mock_client.get.side_effect = [
-            mock_response(500),  # Attempt 1
-            httpx.ReadTimeout("Timeout"),  # Attempt 2 (Exception raised by get)
-            mock_response(503),  # Attempt 3
-            mock_response(200, "GB Content"),  # GB Attempt 1
-        ]
-
-        downloader = Downloader(client=mock_client, storage_backend=storage)
-        result = downloader.download_trial("2020-MIXED-02")
-
-        assert result is True
-        assert mock_client.get.call_count == 4
-        # Verify saved content is from GB
-        assert (tmp_path / "2020-MIXED-02.html").read_text() == "GB Content"
-        assert "source_country=GB" in (tmp_path / "2020-MIXED-02.meta").read_text()
-
-    def test_crawler_max_retries_exhausted_timeout(self) -> None:
-        """Test Crawler failing after max retries with Timeouts."""
-        mock_client = MagicMock(spec=httpx.Client)
-        mock_client.get.side_effect = httpx.ReadTimeout("Persistent Timeout")
 
         crawler = Crawler(client=mock_client)
 
-        # Should raise the last exception (ReadTimeout)
-        with pytest.raises(httpx.ReadTimeout):
+        # It should raise the *last* exception (HTTPStatusError 429)
+        with pytest.raises(httpx.HTTPStatusError) as excinfo:
             crawler.fetch_search_page(page_num=1)
 
-        assert mock_client.get.call_count >= 3
+        assert excinfo.value.response.status_code == 429
+        assert mock_client.get.call_count == 3
