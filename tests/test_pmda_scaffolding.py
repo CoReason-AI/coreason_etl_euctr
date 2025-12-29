@@ -3,7 +3,6 @@ Test PMDA Scaffolding and Structure.
 """
 
 import importlib
-import sys
 from types import ModuleType
 
 import pytest
@@ -60,18 +59,12 @@ def test_package_structure_integrity() -> None:
     Verify that the package structure on the filesystem matches expectations.
     """
     import os
+
     import coreason_etl_pmda
 
     package_path = os.path.dirname(coreason_etl_pmda.__file__)  # type: ignore[type-var]
 
-    expected_files = {
-        "__init__.py",
-        "crawler.py",
-        "downloader.py",
-        "parser.py",
-        "models.py",
-        "pipeline.py"
-    }
+    expected_files = {"__init__.py", "crawler.py", "downloader.py", "parser.py", "models.py", "pipeline.py"}
 
     actual_files = set(os.listdir(package_path))
 
