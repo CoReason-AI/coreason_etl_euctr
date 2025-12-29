@@ -5,13 +5,13 @@ description = "This package provides an extensible ELT pipeline for synchronizin
 authors = ["Gowtham A Rao <gowtham.rao@coreason.ai>"]
 license = "Prosperity-3.0"
 readme = "README.md"
-packages = [{include = "coreason_etl_euctr", from = "src"}]
+packages = [{include = "coreason_etl_euctr", from = "src"}, {include = "coreason_etl_pmda", from = "src"}]
 
 [tool.poetry.scripts]
 euctr-etl = "coreason_etl_euctr.main:main"
 
 [tool.poetry.dependencies]
-python = ">=3.12, <3.15"
+python = ">=3.12, <3.13"
 loguru = "^0.7.2"
 pydantic = "^2.12.5"
 psycopg = {extras = ["binary"], version = "^3.3.2"}
@@ -19,6 +19,8 @@ httpx = "^0.27.0"
 beautifulsoup4 = "^4.12.3"
 boto3 = "^1.42.17"
 tenacity = "^9.1.2"
+dlt = "^0.4.10"
+polars = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
