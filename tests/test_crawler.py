@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from typing import Generator
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -244,9 +244,6 @@ def test_harvest_ids_handles_exception(mock_httpx_client: MagicMock) -> None:
     # Mock: Page 1 success, Page 2 fails (exception), Page 3 success
     # Note: harvest_ids catches Exception and logs error, then continues.
     # However, fetch_search_page raises HTTPStatusError which is an Exception.
-
-    resp1 = MagicMock(status_code=200, text=page1)
-    resp3 = MagicMock(status_code=200, text=page3)
 
     # Page 2 failure
     error_resp = MagicMock(status_code=500)

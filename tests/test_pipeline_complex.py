@@ -147,4 +147,4 @@ def test_large_dataset_performance() -> None:
     assert len(chunks) == count + 1
 
     # Verify last row
-    assert f"Row {count-1}" in chunks[-1]
+    assert f"Row {count - 1}" in chunks[-1]

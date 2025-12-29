@@ -78,9 +78,7 @@ def run_bronze(
     # Step 1: Crawl
     with open(ids_file, "a", encoding="utf-8") as f:
         # R.3.1.1 & R.3.2.1: Iterate using Crawler.harvest_ids
-        for trial_id in crawler.harvest_ids(
-            start_page=start_page, max_pages=max_pages, date_from=date_from
-        ):
+        for trial_id in crawler.harvest_ids(start_page=start_page, max_pages=max_pages, date_from=date_from):
             f.write(f"{trial_id}\n")
 
     # Step 2: Read and Deduplicate

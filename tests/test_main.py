@@ -10,6 +10,7 @@
 
 from datetime import date
 from pathlib import Path
+from typing import Generator
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -47,9 +48,7 @@ def test_run_bronze_flow(tmp_path: Path) -> None:
     )
 
     # Verify harvest_ids call with HWM
-    mock_crawler.harvest_ids.assert_called_once_with(
-        start_page=1, max_pages=2, date_from="2023-01-01"
-    )
+    mock_crawler.harvest_ids.assert_called_once_with(start_page=1, max_pages=2, date_from="2023-01-01")
 
     # Verify intermediate file was created and populated
     ids_file = tmp_path / "ids.csv"
@@ -60,9 +59,7 @@ def test_run_bronze_flow(tmp_path: Path) -> None:
 
     # Verify Deduplication (ID1, ID2, ID3 = 3 unique)
     assert mock_downloader.download_trial.call_count == 3
-    mock_downloader.download_trial.assert_has_calls(
-        [call("ID1"), call("ID2"), call("ID3")], any_order=True
-    )
+    mock_downloader.download_trial.assert_has_calls([call("ID1"), call("ID2"), call("ID3")], any_order=True)
 
     # Verify HWM update
     mock_pipeline.set_high_water_mark.assert_called_once()
@@ -87,9 +84,7 @@ def test_run_bronze_no_hwm(tmp_path: Path) -> None:
     )
 
     # Verify Crawler called without date_from
-    mock_crawler.harvest_ids.assert_called_with(
-        start_page=1, max_pages=1, date_from=None
-    )
+    mock_crawler.harvest_ids.assert_called_with(start_page=1, max_pages=1, date_from=None)
 
 
 def test_run_bronze_default_downloader(tmp_path: Path) -> None:
@@ -124,7 +119,7 @@ def test_run_bronze_handles_crawl_exception(tmp_path: Path) -> None:
     # If harvest_ids crashes entirely (unhandled), run_bronze crashes (which is expected).
     # But let's assume harvest_ids yielded 'ID1' before crashing or finishing.
 
-    def gen():
+    def gen() -> Generator[str, None, None]:
         yield "ID1"
         # Simulate clean exit or continued yield after handled internal error
         # If we raise here, run_bronze loop will crash unless wrapped.
