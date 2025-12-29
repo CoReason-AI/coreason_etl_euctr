@@ -63,17 +63,25 @@ class TestResilienceComplex:
         Test boundary values for status codes in is_retryable_error.
         """
         # 499 (Client Closed Request) -> Should NOT retry (it's < 500)
-        assert is_retryable_error(httpx.HTTPStatusError("499", request=MagicMock(), response=mock_response(499))) is False
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("499", request=MagicMock(), response=mock_response(499))) is False
+        )
 
         # 500 -> Retry
-        assert is_retryable_error(httpx.HTTPStatusError("500", request=MagicMock(), response=mock_response(500))) is True
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("500", request=MagicMock(), response=mock_response(500))) is True
+        )
 
         # 599 -> Retry
-        assert is_retryable_error(httpx.HTTPStatusError("599", request=MagicMock(), response=mock_response(599))) is True
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("599", request=MagicMock(), response=mock_response(599))) is True
+        )
 
         # 600 -> Should NOT retry (strictly < 600 check usually, depending on impl)
         # utils.py: 500 <= code < 600. So 600 is False.
-        assert is_retryable_error(httpx.HTTPStatusError("600", request=MagicMock(), response=mock_response(600))) is False
+        assert (
+            is_retryable_error(httpx.HTTPStatusError("600", request=MagicMock(), response=mock_response(600))) is False
+        )
 
     def test_specific_network_exceptions(self) -> None:
         """
