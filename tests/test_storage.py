@@ -67,13 +67,13 @@ def test_s3_storage_backend(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Read Missing (ClientError NoSuchKey)
     error_response = {"Error": {"Code": "NoSuchKey"}}
-    mock_client.get_object.side_effect = ClientError(error_response, "GetObject")
+    mock_client.get_object.side_effect = ClientError(error_response, "GetObject")  # type: ignore[arg-type]
     with pytest.raises(FileNotFoundError):
         backend.read("missing.txt")
 
     # Read Error (Other)
     error_response_500 = {"Error": {"Code": "500"}}
-    mock_client.get_object.side_effect = ClientError(error_response_500, "GetObject")
+    mock_client.get_object.side_effect = ClientError(error_response_500, "GetObject")  # type: ignore[arg-type]
     with pytest.raises(ClientError):
         backend.read("error.txt")
 
@@ -84,12 +84,12 @@ def test_s3_storage_backend(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Exists Missing (ClientError 404)
     error_response_404 = {"Error": {"Code": "404"}}
-    mock_client.head_object.side_effect = ClientError(error_response_404, "HeadObject")
+    mock_client.head_object.side_effect = ClientError(error_response_404, "HeadObject")  # type: ignore[arg-type]
     assert not backend.exists("missing.txt")
 
     # Exists Error (Other - returns False currently)
     error_response_403 = {"Error": {"Code": "403"}}
-    mock_client.head_object.side_effect = ClientError(error_response_403, "HeadObject")
+    mock_client.head_object.side_effect = ClientError(error_response_403, "HeadObject")  # type: ignore[arg-type]
     assert not backend.exists("forbidden.txt")
 
 

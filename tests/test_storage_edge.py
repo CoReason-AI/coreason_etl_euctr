@@ -58,13 +58,13 @@ def test_s3_storage_forbidden_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Mock 403 on Read
     error_403 = {"Error": {"Code": "403", "Message": "Forbidden"}}
-    mock_client.get_object.side_effect = ClientError(error_403, "GetObject")
+    mock_client.get_object.side_effect = ClientError(error_403, "GetObject")  # type: ignore[arg-type]
 
     with pytest.raises(ClientError):
         backend.read("secret.txt")
 
     # Mock 403 on Exists
-    mock_client.head_object.side_effect = ClientError(error_403, "HeadObject")
+    mock_client.head_object.side_effect = ClientError(error_403, "HeadObject")  # type: ignore[arg-type]
     assert backend.exists("secret.txt") is False
 
 

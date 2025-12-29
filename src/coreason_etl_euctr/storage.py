@@ -17,7 +17,7 @@ try:
     from botocore.exceptions import ClientError
 except ImportError:  # pragma: no cover
     boto3 = None  # type: ignore[assignment]
-    ClientError = None  # type: ignore[assignment]
+    ClientError = None  # type: ignore
 
 
 class StorageBackend(ABC):
