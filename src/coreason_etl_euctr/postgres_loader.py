@@ -195,9 +195,7 @@ class PostgresLoader(BaseLoader):
                 # "CREATE TEMP TABLE ... LIKE ... INCLUDING ALL" copies structure.
                 # However, Postgres temp tables are session-local.
                 logger.debug(f"Creating temp table {temp_table}...")
-                create_temp_sql = (
-                    f"CREATE TEMP TABLE {temp_table} " f"(LIKE {target_table} INCLUDING ALL) " "ON COMMIT DROP"
-                )
+                create_temp_sql = f"CREATE TEMP TABLE {temp_table} (LIKE {target_table} INCLUDING ALL) ON COMMIT DROP"
                 cur.execute(create_temp_sql)
 
                 # 2. Bulk Load to Temp Table

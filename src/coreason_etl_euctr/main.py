@@ -77,17 +77,9 @@ def run_bronze(
 
     # Step 1: Crawl
     with open(ids_file, "a", encoding="utf-8") as f:
-        for i in range(start_page, start_page + max_pages):
-            try:
-                logger.info(f"Crawling page {i}...")
-                # R.3.2.1: Pass HWM to search
-                html = crawler.fetch_search_page(page_num=i, date_from=date_from)
-                ids = crawler.extract_ids(html)
-                for mid in ids:
-                    f.write(f"{mid}\n")
-            except Exception as e:
-                logger.error(f"Failed to crawl page {i}: {e}")
-                continue
+        # R.3.1.1 & R.3.2.1: Iterate using Crawler.harvest_ids
+        for trial_id in crawler.harvest_ids(start_page=start_page, max_pages=max_pages, date_from=date_from):
+            f.write(f"{trial_id}\n")
 
     # Step 2: Read and Deduplicate
     unique_ids: List[str] = []

@@ -27,7 +27,7 @@ def test_stage_data_list_serialization_simple() -> None:
     chunks = list(pipeline.stage_data(data))
     row = chunks[1].strip()
 
-    assert '1,"{""a"",""b""}"' in row or '1,"{' "a" "," "b" '}"' in row
+    assert '1,"{""a"",""b""}"' in row or '1,"{a,b}"' in row
 
 
 def test_stage_data_list_serialization_quotes() -> None:

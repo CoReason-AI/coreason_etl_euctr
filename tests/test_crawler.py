@@ -190,3 +190,94 @@ def test_extract_ids_unicode_handling() -> None:
     crawler = Crawler()
     ids = crawler.extract_ids(html)
     assert ids == ["2004-001234-56"]
+
+
+def test_harvest_ids_pagination(mock_httpx_client: MagicMock) -> None:
+    """Test that harvest_ids iterates multiple pages and respects max_pages."""
+    # Mock responses for 2 pages
+    page1 = """<div><span>EudraCT Number:</span> <span>ID-1</span></div>"""
+    page2 = """<div><span>EudraCT Number:</span> <span>ID-2</span></div>"""
+
+    mock_httpx_client.get.side_effect = [
+        MagicMock(status_code=200, text=page1),
+        MagicMock(status_code=200, text=page2),
+    ]
+
+    crawler = Crawler(client=mock_httpx_client)
+
+    with patch("time.sleep"):
+        ids = list(crawler.harvest_ids(start_page=1, max_pages=2))
+
+    assert ids == ["ID-1", "ID-2"]
+    assert mock_httpx_client.get.call_count == 2
+    # Verify page params
+    call_args = mock_httpx_client.get.call_args_list
+    assert call_args[0][1]["params"]["page"] == "1"
+    assert call_args[1][1]["params"]["page"] == "2"
+
+
+def test_harvest_ids_stops_on_empty_page(mock_httpx_client: MagicMock) -> None:
+    """Test that harvest_ids stops if a page has no IDs."""
+    page1 = """<div><span>EudraCT Number:</span> <span>ID-1</span></div>"""
+    page2 = "<html><body>No results</body></html>"  # Empty of IDs
+
+    mock_httpx_client.get.side_effect = [
+        MagicMock(status_code=200, text=page1),
+        MagicMock(status_code=200, text=page2),
+    ]
+
+    crawler = Crawler(client=mock_httpx_client)
+
+    with patch("time.sleep"):
+        ids = list(crawler.harvest_ids(start_page=1, max_pages=10))
+
+    # Should only get ID-1, then stop at page 2
+    assert ids == ["ID-1"]
+    assert mock_httpx_client.get.call_count == 2
+
+
+def test_harvest_ids_handles_exception(mock_httpx_client: MagicMock) -> None:
+    """Test that harvest_ids continues or handles exception on a page."""
+    page1 = """<div><span>EudraCT Number:</span> <span>ID-1</span></div>"""
+    page3 = """<div><span>EudraCT Number:</span> <span>ID-3</span></div>"""
+
+    # Mock: Page 1 success, Page 2 fails (exception), Page 3 success
+    # Note: harvest_ids catches Exception and logs error, then continues.
+    # However, fetch_search_page raises HTTPStatusError which is an Exception.
+
+    # Page 2 failure
+    error_resp = MagicMock(status_code=500)
+
+    def raise_http_error(*args: object, **kwargs: object) -> None:
+        raise httpx.HTTPStatusError("500 Error", request=MagicMock(), response=error_resp)
+
+    # We need to mock the sequence of calls to client.get
+    # Since fetch_search_page has @retry, it might try multiple times.
+    # We'll mock fetch_search_page directly to avoid testing retry logic here (tested separately).
+
+    crawler = Crawler(client=mock_httpx_client)
+
+    with patch.object(crawler, "fetch_search_page") as mock_fetch:
+        mock_fetch.side_effect = [
+            page1,
+            Exception("Simulated Fetch Error"),
+            page3,
+        ]
+
+        ids = list(crawler.harvest_ids(start_page=1, max_pages=3))
+
+    # Should get ID-1 and ID-3. Page 2 skipped.
+    assert ids == ["ID-1", "ID-3"]
+    assert mock_fetch.call_count == 3
+
+
+def test_harvest_ids_passes_dates(mock_httpx_client: MagicMock) -> None:
+    """Test that harvest_ids passes date filters correctly."""
+    crawler = Crawler(client=mock_httpx_client)
+    mock_httpx_client.get.return_value = MagicMock(status_code=200, text="<html></html>")
+
+    with patch("time.sleep"):
+        list(crawler.harvest_ids(start_page=1, max_pages=1, date_from="2023-01-01"))
+
+    call_args = mock_httpx_client.get.call_args
+    assert call_args[1]["params"]["dateFrom"] == "2023-01-01"
