@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import time
+import unicodedata
 from typing import Generator, List, Optional
 
 import httpx
@@ -127,8 +128,12 @@ class Crawler:
         soup = BeautifulSoup(html_content, "html.parser")
         ids: List[str] = []
 
+        # Helper to normalize text (handles non-breaking spaces)
+        def normalize(t: str) -> str:
+            return unicodedata.normalize("NFKC", t)
+
         # Find all elements that contain the label text "EudraCT Number:"
-        labels = soup.find_all(string=lambda text: "EudraCT Number:" in text if text else False)
+        labels = soup.find_all(string=lambda text: "EudraCT Number:" in normalize(text) if text else False)
 
         for label in labels:
             # Ignore comments
@@ -141,7 +146,7 @@ class Crawler:
 
             # Case 1: Label and Value are in the same text node / element
             # Example: <span>EudraCT Number: 2004-000015-26</span>
-            full_text = parent.get_text(strip=True)
+            full_text = normalize(parent.get_text(strip=True))
             if "EudraCT Number:" in full_text and len(full_text) > len("EudraCT Number:"):
                 # Extract value from the same string
                 cleaned = full_text.replace("EudraCT Number:", "").strip()
@@ -161,7 +166,8 @@ class Crawler:
                 next_node = next_node.next_sibling
 
             if next_node:
-                val = next_node.get_text(strip=True) if hasattr(next_node, "get_text") else str(next_node).strip()
+                raw_val = next_node.get_text(strip=True) if hasattr(next_node, "get_text") else str(next_node).strip()
+                val = normalize(raw_val)
                 if val:
                     ids.append(val.split()[0])
 
