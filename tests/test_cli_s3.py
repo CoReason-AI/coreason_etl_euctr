@@ -34,13 +34,10 @@ def test_cli_crawl_defaults_to_local(mock_run_bronze: MagicMock, monkeypatch: py
     kwargs = mock_run_bronze.call_args.kwargs
 
     # Verify storage_backend is LocalStorageBackend (or None, triggering default in run_bronze)
-    # If main instantiates it, it should be passed.
-    # If main doesn't, run_bronze uses default.
-    # We expect None based on current main implementation when no S3 args provided
     if "storage_backend" in kwargs and kwargs["storage_backend"]:
         assert isinstance(kwargs["storage_backend"], LocalStorageBackend)
     else:
-        # This path is also valid if main passes None for local
+        # None defaults to Local in run_bronze
         pass
 
 
@@ -94,3 +91,70 @@ def test_cli_crawl_s3_cli_overrides_env(mock_run_bronze: MagicMock, monkeypatch:
     backend = kwargs["storage_backend"]
     assert isinstance(backend, S3StorageBackend)
     assert backend.bucket_name == "cli-bucket"
+
+
+def test_cli_s3_mixed_config_env_and_cli(mock_run_bronze: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test mixing Env (Bucket) and CLI (Prefix)."""
+    monkeypatch.setenv("EUCTR_S3_BUCKET", "env-bucket")
+
+    with patch("coreason_etl_euctr.storage.boto3"):
+        # We only pass prefix via CLI, expect bucket to come from env
+        with patch("sys.argv", ["euctr-etl", "crawl", "--s3-prefix", "cli-prefix"]):
+            main()
+
+    mock_run_bronze.assert_called_once()
+    kwargs = mock_run_bronze.call_args.kwargs
+
+    backend = kwargs["storage_backend"]
+    assert isinstance(backend, S3StorageBackend)
+    assert backend.bucket_name == "env-bucket"
+    assert backend.prefix == "cli-prefix"
+
+
+def test_cli_s3_region_only_ignored(mock_run_bronze: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that providing only a region (without bucket) defaults to Local storage."""
+    monkeypatch.delenv("EUCTR_S3_BUCKET", raising=False)
+    monkeypatch.setenv("EUCTR_S3_REGION", "us-east-1")
+
+    with patch("sys.argv", ["euctr-etl", "crawl"]):
+        main()
+
+    mock_run_bronze.assert_called_once()
+    kwargs = mock_run_bronze.call_args.kwargs
+    # Should be None (default local)
+    assert kwargs.get("storage_backend") is None
+
+
+def test_cli_s3_empty_env_var(mock_run_bronze: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that an empty EUCTR_S3_BUCKET environment variable is treated as unset."""
+    monkeypatch.setenv("EUCTR_S3_BUCKET", "")
+
+    with patch("sys.argv", ["euctr-etl", "crawl"]):
+        main()
+
+    mock_run_bronze.assert_called_once()
+    kwargs = mock_run_bronze.call_args.kwargs
+    assert kwargs.get("storage_backend") is None
+
+
+def test_cli_s3_complex_precedence(mock_run_bronze: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test complex precedence:
+    - CLI Bucket overrides Env Bucket
+    - Env Prefix is preserved (since CLI prefix not passed)
+    - CLI Region overrides Env Region (not easily visible in backend object, but we assume S3 instantiated)
+    """
+    monkeypatch.setenv("EUCTR_S3_BUCKET", "env-bucket")
+    monkeypatch.setenv("EUCTR_S3_PREFIX", "env-prefix")
+
+    with patch("coreason_etl_euctr.storage.boto3"):
+        with patch("sys.argv", ["euctr-etl", "crawl", "--s3-bucket", "cli-bucket"]):
+            main()
+
+    mock_run_bronze.assert_called_once()
+    kwargs = mock_run_bronze.call_args.kwargs
+    backend = kwargs["storage_backend"]
+
+    assert isinstance(backend, S3StorageBackend)
+    assert backend.bucket_name == "cli-bucket"
+    assert backend.prefix == "env-prefix"
