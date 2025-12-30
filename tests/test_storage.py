@@ -158,6 +158,11 @@ def test_s3_storage_list_files(monkeypatch: pytest.MonkeyPatch) -> None:
 
     results = list(backend.list_files("*.html"))
 
+    # Assert c.txt (from page1) was filtered out
+    # c.txt has timestamp 3000. It shouldn't be in results.
+    for r in results:
+        assert r.key != "c.txt" and r.key != "data/c.txt"
+
     # Expect 2 files
     assert len(results) == 2
 

@@ -280,8 +280,12 @@ def test_run_silver_no_input_dir(tmp_path: Path) -> None:
     mock_loader = MagicMock()
     # Use a directory that definitely does not exist
     missing_dir = tmp_path / "does_not_exist"
-    run_silver(input_dir=str(missing_dir), loader=mock_loader)
-    mock_loader.connect.assert_not_called()
+
+    with patch("coreason_etl_euctr.main.logger") as mock_logger:
+        run_silver(input_dir=str(missing_dir), loader=mock_loader)
+        mock_loader.connect.assert_not_called()
+        mock_logger.error.assert_called_once()
+        assert "does not exist" in mock_logger.error.call_args[0][0]
 
 
 def test_run_silver_no_valid_data(tmp_path: Path) -> None:
