@@ -150,6 +150,34 @@ class Pipeline:
         state["silver_last_run"] = timestamp
         self.save_state(state)
 
+    def get_crawl_cursor(self) -> Optional[int]:
+        """
+        Get the last successfully crawled page number from the state.
+
+        Returns:
+            The page number, or None if not set.
+        """
+        state = self.load_state()
+        val = state.get("crawl_last_page")
+        if val is None:
+            return None
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid crawl_last_page in state: {val}")
+            return None
+
+    def set_crawl_cursor(self, page: int) -> None:
+        """
+        Update the last successfully crawled page number in the state.
+
+        Args:
+            page: The page number.
+        """
+        state = self.load_state()
+        state["crawl_last_page"] = page
+        self.save_state(state)
+
     def stage_data(self, models: Iterable[BaseModel]) -> Generator[str, None, None]:
         """
         Convert a stream of Pydantic models into a CSV stream.

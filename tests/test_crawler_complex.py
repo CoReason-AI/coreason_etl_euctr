@@ -50,7 +50,8 @@ def test_harvest_transient_failure_recovery(mock_client: MagicMock) -> None:
         # Defaults are stop_after_attempt(3).
         results = list(crawler.harvest_ids(start_page=1, max_pages=1))
 
-    assert results == ["2023-001"]
+    assert len(results) == 1
+    assert results[0] == (1, ["2023-001"])
     assert mock_client.get.call_count == 3
 
 
@@ -71,7 +72,8 @@ def test_harvest_persistent_failure_skip(mock_client: MagicMock) -> None:
 
         results = list(crawler.harvest_ids(start_page=1, max_pages=2))
 
-    assert results == ["2023-002"]
+    assert len(results) == 1
+    assert results[0] == (2, ["2023-002"])
     assert mock_fetch.call_count == 2
 
 
@@ -92,7 +94,9 @@ def test_harvest_mixed_results_sequence(mock_client: MagicMock) -> None:
 
         results = list(crawler.harvest_ids(start_page=1, max_pages=10))
 
-    assert results == ["ID-1", "ID-3"]
+    assert len(results) == 2
+    assert results[0] == (1, ["ID-1"])
+    assert results[1] == (3, ["ID-3"])
     # Should stop after calling page 4
     assert mock_fetch.call_count == 4
 
