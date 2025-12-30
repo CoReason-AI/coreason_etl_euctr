@@ -48,8 +48,20 @@ This project uses **Ruff** for Python linting/formatting, **Mypy** for typing, a
   * Strict static typing is encouraged.
   * Run checks with: poetry run mypy .
   * Avoid Any wherever possible.
-* **Logging:** Use loguru instead of the standard logging module.
-  * *Good:* from loguru import logger -> logger.info("...")
+* **Logging & Observability:**
+  * **Standard:** Use the centralized `loguru` configuration.
+  * **Usage:**
+    ```python
+    from coreason_etl_euctr.logger import logger
+
+    # Inside an Agent
+    logger.info("Agent started task")
+    try:
+        ...
+    except Exception:
+        logger.exception("Agent failed")
+    ```
+  * **Output:** Logs are output to Console (Human-readable text) and `logs/app.log` (JSON) for ingestion.
 * **Licensing:** Every .py file must start with the standard license header.
 
 ### **Legal & Intellectual Property**
