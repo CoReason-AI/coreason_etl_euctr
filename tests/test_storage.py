@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -146,12 +146,18 @@ def test_s3_storage_list_files(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_client.get_paginator.return_value = mock_paginator
 
     # Mock Pages
+    # Use timezone-aware timestamps well past 1970 to support Windows
+    ts1 = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    ts2 = datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+    ts3 = datetime(2025, 1, 3, 12, 0, 0, tzinfo=timezone.utc)
+    ts_folder = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+
     page1 = {
         "Contents": [
-            {"Key": "data/a.html", "LastModified": datetime.fromtimestamp(1000)},
-            {"Key": "data/b.html", "LastModified": datetime.fromtimestamp(2000)},
-            {"Key": "data/c.txt", "LastModified": datetime.fromtimestamp(3000)},
-            {"Key": "data/", "LastModified": datetime.fromtimestamp(0)},  # Folder placeholder
+            {"Key": "data/a.html", "LastModified": ts1},
+            {"Key": "data/b.html", "LastModified": ts2},
+            {"Key": "data/c.txt", "LastModified": ts3},
+            {"Key": "data/", "LastModified": ts_folder},  # Folder placeholder
         ]
     }
     mock_paginator.paginate.return_value = [page1]
@@ -159,7 +165,6 @@ def test_s3_storage_list_files(monkeypatch: pytest.MonkeyPatch) -> None:
     results = list(backend.list_files("*.html"))
 
     # Assert c.txt (from page1) was filtered out
-    # c.txt has timestamp 3000. It shouldn't be in results.
     for r in results:
         assert r.key != "c.txt" and r.key != "data/c.txt"
 
@@ -170,10 +175,10 @@ def test_s3_storage_list_files(monkeypatch: pytest.MonkeyPatch) -> None:
     results.sort(key=lambda x: x.key)
 
     assert results[0].key == "a.html"
-    assert results[0].mtime == 1000.0
+    assert results[0].mtime == ts1.timestamp()
 
     assert results[1].key == "b.html"
-    assert results[1].mtime == 2000.0
+    assert results[1].mtime == ts2.timestamp()
 
     # Verify pagination call args
     mock_paginator.paginate.assert_called_with(Bucket="bucket", Prefix="data/")
@@ -193,7 +198,8 @@ def test_s3_storage_list_files_empty_prefix(monkeypatch: pytest.MonkeyPatch) -> 
     mock_paginator = MagicMock()
     mock_client.get_paginator.return_value = mock_paginator
 
-    page = {"Contents": [{"Key": "root_file.html", "LastModified": MagicMock(timestamp=lambda: 100)}]}
+    ts = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    page = {"Contents": [{"Key": "root_file.html", "LastModified": ts}]}
     mock_paginator.paginate.return_value = [page]
 
     results = list(backend.list_files("*.html"))

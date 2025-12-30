@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -118,16 +119,16 @@ def test_s3_list_files_pagination_complex(monkeypatch: pytest.MonkeyPatch) -> No
     mock_client.get_paginator.return_value = mock_paginator
 
     # Page 1: valid files
-    p1 = {
+    p1: dict[str, list[dict[str, Any]]] = {
         "Contents": [
             {"Key": "data/1.html", "LastModified": MagicMock(timestamp=lambda: 100)},
             {"Key": "data/skip.txt", "LastModified": MagicMock(timestamp=lambda: 100)},
         ]
     }
     # Page 2: empty contents
-    p2: dict[str, list[dict]] = {"Contents": []}  # type: ignore
+    p2: dict[str, list[dict[str, Any]]] = {"Contents": []}
     # Page 3: valid files and folder placeholder
-    p3 = {
+    p3: dict[str, list[dict[str, Any]]] = {
         "Contents": [
             {"Key": "data/", "LastModified": MagicMock(timestamp=lambda: 100)},
             {"Key": "data/2.html", "LastModified": MagicMock(timestamp=lambda: 200)},
@@ -156,7 +157,7 @@ def test_s3_list_files_nested(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_client.get_paginator.return_value = mock_paginator
 
     # S3 returns nested keys naturally
-    p1 = {
+    p1: dict[str, list[dict[str, Any]]] = {
         "Contents": [
             {"Key": "data/root.html", "LastModified": MagicMock(timestamp=lambda: 100)},
             {"Key": "data/sub/nested.html", "LastModified": MagicMock(timestamp=lambda: 200)},
