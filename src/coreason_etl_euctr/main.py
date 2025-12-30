@@ -351,7 +351,7 @@ def _get_storage_backend(args: argparse.Namespace) -> Optional[StorageBackend]:
     # Use getattr to safely access args that might not be present if subparser didn't add them
     # although we plan to add them to both.
     s3_bucket = getattr(args, "s3_bucket", None) or os.getenv("EUCTR_S3_BUCKET")
-    s3_prefix = getattr(args, "s3_prefix", None) or os.getenv("EUCTR_S3_PREFIX", "")
+    s3_prefix = str(getattr(args, "s3_prefix", None) or os.getenv("EUCTR_S3_PREFIX", "") or "")
     s3_region = getattr(args, "s3_region", None) or os.getenv("EUCTR_S3_REGION")
 
     if s3_bucket:
