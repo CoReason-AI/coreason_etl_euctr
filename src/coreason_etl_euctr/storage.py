@@ -9,8 +9,9 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, cast
+from typing import Iterator, Optional, cast
 
 try:
     import boto3
@@ -18,6 +19,14 @@ try:
 except ImportError:  # pragma: no cover
     boto3 = None  # type: ignore[assignment]
     ClientError = None  # type: ignore
+
+
+@dataclass
+class StorageObject:
+    """Represents a file object in storage."""
+
+    key: str
+    mtime: float
 
 
 class StorageBackend(ABC):
@@ -47,6 +56,14 @@ class StorageBackend(ABC):
         """
         pass  # pragma: no cover
 
+    @abstractmethod
+    def list_files(self, pattern: str = "*.html") -> Iterator[StorageObject]:
+        """
+        List files matching the pattern.
+        Returns iterator of StorageObject containing key and modification time.
+        """
+        pass  # pragma: no cover
+
 
 class LocalStorageBackend(StorageBackend):
     """
@@ -71,6 +88,10 @@ class LocalStorageBackend(StorageBackend):
 
     def exists(self, key: str) -> bool:
         return (self.base_path / key).exists()
+
+    def list_files(self, pattern: str = "*.html") -> Iterator[StorageObject]:
+        for file_path in self.base_path.glob(pattern):
+            yield StorageObject(key=file_path.name, mtime=file_path.stat().st_mtime)
 
 
 class S3StorageBackend(StorageBackend):
@@ -120,3 +141,35 @@ class S3StorageBackend(StorageBackend):
             # For some S3 compatible stores or permissions issues, it might be 403, but 404 is standard for missing.
             # boto3 head_object raises 404 for missing keys.
             return False
+
+    def list_files(self, pattern: str = "*.html") -> Iterator[StorageObject]:
+        paginator = self.client.get_paginator("list_objects_v2")
+
+        prefix = self.prefix
+        if prefix and not prefix.endswith("/"):
+            prefix += "/"
+
+        # S3 listing includes the prefix in the key
+        page_iterator = paginator.paginate(Bucket=self.bucket_name, Prefix=prefix)
+        suffix = pattern.replace("*", "")  # Naive glob support
+
+        for page in page_iterator:
+            if "Contents" in page:
+                for obj in page["Contents"]:
+                    key = obj["Key"]
+                    # Skip if it matches the prefix exactly (folder placeholder)
+                    if key == prefix:
+                        continue
+
+                    # Filter by suffix
+                    if not key.endswith(suffix):
+                        continue
+
+                    # Convert to relative key for consumption
+                    if prefix and key.startswith(prefix):
+                        relative_key = key[len(prefix) :]
+                    else:
+                        relative_key = key
+
+                    mtime = obj["LastModified"].timestamp()
+                    yield StorageObject(key=relative_key, mtime=mtime)

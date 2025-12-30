@@ -118,26 +118,28 @@ def run_silver(
     parser: Optional[Parser] = None,
     pipeline: Optional[Pipeline] = None,
     loader: Optional[BaseLoader] = None,
+    storage_backend: Optional[StorageBackend] = None,
 ) -> None:
     """
     Execute the Silver Layer workflow: Parse -> Stage -> Load.
 
     Args:
-        input_dir: Directory containing raw HTML files.
+        input_dir: Directory containing raw HTML files (used if storage_backend is None).
         mode: Loading mode, either "FULL" or "UPSERT".
         parser: Optional Parser instance.
         pipeline: Optional Pipeline instance.
         loader: Optional Loader instance.
+        storage_backend: Optional injected StorageBackend (Local or S3).
     """
     parser = parser or Parser()
     pipeline = pipeline or Pipeline()
     loader = loader or PostgresLoader()
+    storage = storage_backend or LocalStorageBackend(Path(input_dir))
 
     if mode not in ["FULL", "UPSERT"]:
         raise ValueError("Mode must be 'FULL' or 'UPSERT'")
 
-    input_path = Path(input_dir)
-    if not input_path.exists():
+    if not storage_backend and not Path(input_dir).exists():
         logger.error(f"Input directory {input_dir} does not exist.")
         return
 
@@ -156,7 +158,7 @@ def run_silver(
     drugs = []
     conditions = []
 
-    files = list(input_path.glob("*.html"))
+    files = list(storage.list_files("*.html"))
     logger.info(f"Found {len(files)} HTML files to process.")
 
     # R.3.2.3: Incremental Processing (Skip unchanged files)
@@ -171,7 +173,7 @@ def run_silver(
     skipped_future_count = 0
 
     for f in files:
-        mtime = f.stat().st_mtime
+        mtime = f.mtime
 
         # Check Lower Bound (Old files)
         if silver_watermark and mtime <= silver_watermark:
@@ -194,19 +196,22 @@ def run_silver(
 
     logger.info(f"Processing {len(files_to_process)} new/modified files.")
 
-    for file_path in files_to_process:
-        # Extract ID from filename
-        trial_id = file_path.stem
-        context_logger = logger.bind(trial_id=trial_id, file_path=str(file_path))
+    for file_obj in files_to_process:
+        # Extract ID from filename (key)
+        # key might be "folder/123.html" or just "123.html"
+        # We assume flat or check stem.
+        file_key = file_obj.key
+        trial_id = Path(file_key).stem
+        context_logger = logger.bind(trial_id=trial_id, file_key=file_key)
 
         try:
-            content = file_path.read_text(encoding="utf-8")
+            content = storage.read(file_key)
 
             # Parse Trial
             # We assume the file contains the source URL or we reconstruct it.
             # R.4.2.3 says metadata preserved. If we injected meta tag, we could read it.
             # For now, we'll placeholder source.
-            url_source = f"file://{file_path.name}"
+            url_source = f"file://{file_key}"
 
             try:
                 trial = parser.parse_trial(content, url_source=url_source)
@@ -215,7 +220,7 @@ def run_silver(
                     context_logger.warning(f"Filename {trial_id} mismatch with content {trial.eudract_number}")
                 trials.append(trial)
             except ValueError as e:
-                context_logger.warning(f"Failed to parse trial from {file_path}: {e}")
+                context_logger.warning(f"Failed to parse trial from {file_key}: {e}")
                 continue
 
             # Parse Drugs
@@ -227,7 +232,7 @@ def run_silver(
             conditions.extend(trial_conds)
 
         except Exception as e:
-            context_logger.error(f"Error processing file {file_path}: {e}")
+            context_logger.error(f"Error processing file {file_key}: {e}")
             continue
 
     if not trials:
@@ -386,11 +391,11 @@ def main() -> int:
             output_dir=args.output_dir, start_page=args.start_page, max_pages=args.max_pages, storage_backend=storage
         )
     elif args.command == "load":
-        # Guardrail for unimplemented S3 Silver
-        # If user tries to load from what implies S3 (e.g. they set S3 env vars but rely on input-dir default)
-        # Actually load uses input-dir arg. If input-dir is a path, it works.
-        # But if they want S3, they can't specify it yet.
-        run_silver(input_dir=args.input_dir, mode=args.mode)
+        # S3 Support for Load
+        # We reuse the same _get_storage_backend logic, but allow input-dir to be ignored if S3 is present?
+        # Typically, if S3 args are present, we use S3.
+        storage = _get_storage_backend(args)
+        run_silver(input_dir=args.input_dir, mode=args.mode, storage_backend=storage)
     else:
         parser.print_help()
         return 1
