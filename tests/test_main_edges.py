@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 from coreason_etl_euctr.main import run_bronze, run_silver
 from coreason_etl_euctr.models import EuTrial
 
@@ -149,3 +150,64 @@ def test_run_bronze_read_ids_failure(tmp_path: Path) -> None:
 
     # Should log error and return (skipping download)
     assert mock_downloader.download_trial.call_count == 0
+
+
+def test_run_silver_storage_read_error(tmp_path: Path) -> None:
+    """Test resilience when storage read fails for a specific file."""
+    # Setup dummy files
+    backend = MagicMock()
+    # Mock listing to return 2 files
+    from coreason_etl_euctr.storage import StorageObject
+
+    backend.list_files.return_value = iter(
+        [StorageObject(key="good.html", mtime=100), StorageObject(key="bad.html", mtime=100)]
+    )
+
+    # Mock read to fail for one
+    def read_side_effect(key: str) -> str:
+        if key == "bad.html":
+            raise OSError("Read failed")
+        return "<html>content</html>"
+
+    backend.read.side_effect = read_side_effect
+
+    mock_parser = MagicMock()
+    mock_parser.parse_trial.return_value = EuTrial(eudract_number="123", url_source="s")
+    mock_parser.parse_drugs.return_value = []
+    mock_parser.parse_conditions.return_value = []
+
+    mock_loader = MagicMock()
+
+    # We must patch Pipeline watermark to ensure files are processed
+    # Or just rely on default pipeline mock in run_silver if passed?
+    # run_silver instantiates Pipeline() if None.
+    # We should inject it.
+    mock_pipeline = MagicMock()
+    mock_pipeline.get_silver_watermark.return_value = None
+    mock_pipeline.stage_data.return_value = iter(["header"])
+
+    run_silver(
+        input_dir="dummy", storage_backend=backend, parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader
+    )
+
+    # Should have processed 'good.html' (parsed 1 trial)
+    # 'bad.html' should have been logged and skipped
+
+    # Verify stage_data called with 1 item
+    args, _ = mock_pipeline.stage_data.call_args
+    assert len(args[0]) == 1
+    assert args[0][0].eudract_number == "123"
+
+
+def test_run_silver_storage_list_error() -> None:
+    """Test immediate failure if list_files raises exception."""
+    backend = MagicMock()
+    backend.list_files.side_effect = Exception("S3 Down")
+
+    # This exception should bubble up or be handled?
+    # Current implementation: list(storage.list_files(...)) is called directly.
+    # It is NOT wrapped in try-except in run_silver.
+    # So it should raise.
+
+    with pytest.raises(Exception, match="S3 Down"):
+        run_silver(input_dir="dummy", storage_backend=backend)
