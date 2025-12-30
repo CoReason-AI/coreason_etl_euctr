@@ -19,6 +19,23 @@ from coreason_etl_euctr.storage import LocalStorageBackend
 from pydantic import BaseModel
 
 
+def test_main_run_silver_explicit_backend(tmp_path: Path) -> None:
+    """
+    Test run_silver when storage_backend is explicitly provided.
+    This should cover the 'if storage_backend:' branch in main.py.
+    """
+    mock_storage = MagicMock()
+    # Mock list_files to return empty list so loop doesn't run
+    mock_storage.list_files.return_value = []
+
+    mock_loader = MagicMock()
+
+    run_silver(input_dir=str(tmp_path), storage_backend=mock_storage, loader=mock_loader)
+
+    # Verify list_files called
+    mock_storage.list_files.assert_called_once()
+
+
 def test_hello_world() -> None:
     assert hello_world() == "Hello World!"
 

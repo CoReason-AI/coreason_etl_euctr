@@ -177,3 +177,29 @@ def test_s3_storage_list_files(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Verify pagination call args
     mock_paginator.paginate.assert_called_with(Bucket="bucket", Prefix="data/")
+
+
+def test_s3_storage_list_files_empty_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test S3StorageBackend.list_files with empty prefix to hit the else block.
+    """
+    mock_boto3 = MagicMock()
+    mock_client = MagicMock()
+    mock_boto3.client.return_value = mock_client
+    monkeypatch.setattr("coreason_etl_euctr.storage.boto3", mock_boto3)
+
+    backend = S3StorageBackend("bucket", prefix="")
+
+    mock_paginator = MagicMock()
+    mock_client.get_paginator.return_value = mock_paginator
+
+    page = {
+        "Contents": [
+            {"Key": "root_file.html", "LastModified": MagicMock(timestamp=lambda: 100)}
+        ]
+    }
+    mock_paginator.paginate.return_value = [page]
+
+    results = list(backend.list_files("*.html"))
+    assert len(results) == 1
+    assert results[0].key == "root_file.html"
