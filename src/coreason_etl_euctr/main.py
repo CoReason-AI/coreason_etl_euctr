@@ -64,6 +64,15 @@ def run_bronze(
     else:
         logger.info("Performing Full Crawl (No HWM found)")
 
+    # Check if we should resume from state
+    # If start_page is default (1) and we have a saved cursor, use it.
+    # If user explicitly provided start_page != 1, we respect that.
+    crawl_cursor = pipeline.get_crawl_cursor()
+    if start_page == 1 and crawl_cursor:
+        # Resume from next page
+        start_page = crawl_cursor + 1
+        logger.info(f"Resuming crawl from page {start_page} (based on saved state).")
+
     # R.3.1.1: Store harvested IDs in an intermediate file
     ids_file = Path(output_dir) / "ids.csv"
     try:
@@ -75,8 +84,13 @@ def run_bronze(
     # Step 1: Crawl
     with open(ids_file, "a", encoding="utf-8") as f:
         # R.3.1.1 & R.3.2.1: Iterate using Crawler.harvest_ids
-        for trial_id in crawler.harvest_ids(start_page=start_page, max_pages=max_pages, date_from=date_from):
-            f.write(f"{trial_id}\n")
+        # R.6.1.1: Consuming generator that yields (page_num, ids)
+        for page_num, ids in crawler.harvest_ids(start_page=start_page, max_pages=max_pages, date_from=date_from):
+            for trial_id in ids:
+                f.write(f"{trial_id}\n")
+
+            # Save state after each successful page
+            pipeline.set_crawl_cursor(page_num)
 
     # Step 2: Read and Deduplicate
     unique_ids: List[str] = []

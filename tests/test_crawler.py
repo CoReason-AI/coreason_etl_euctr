@@ -206,9 +206,13 @@ def test_harvest_ids_pagination(mock_httpx_client: MagicMock) -> None:
     crawler = Crawler(client=mock_httpx_client)
 
     with patch("time.sleep"):
-        ids = list(crawler.harvest_ids(start_page=1, max_pages=2))
+        results = list(crawler.harvest_ids(start_page=1, max_pages=2))
 
-    assert ids == ["ID-1", "ID-2"]
+    # Expect tuples: (page_num, [ids])
+    assert len(results) == 2
+    assert results[0] == (1, ["ID-1"])
+    assert results[1] == (2, ["ID-2"])
+
     assert mock_httpx_client.get.call_count == 2
     # Verify page params
     call_args = mock_httpx_client.get.call_args_list
@@ -229,10 +233,11 @@ def test_harvest_ids_stops_on_empty_page(mock_httpx_client: MagicMock) -> None:
     crawler = Crawler(client=mock_httpx_client)
 
     with patch("time.sleep"):
-        ids = list(crawler.harvest_ids(start_page=1, max_pages=10))
+        results = list(crawler.harvest_ids(start_page=1, max_pages=10))
 
     # Should only get ID-1, then stop at page 2
-    assert ids == ["ID-1"]
+    assert len(results) == 1
+    assert results[0] == (1, ["ID-1"])
     assert mock_httpx_client.get.call_count == 2
 
 
@@ -264,10 +269,12 @@ def test_harvest_ids_handles_exception(mock_httpx_client: MagicMock) -> None:
             page3,
         ]
 
-        ids = list(crawler.harvest_ids(start_page=1, max_pages=3))
+        results = list(crawler.harvest_ids(start_page=1, max_pages=3))
 
     # Should get ID-1 and ID-3. Page 2 skipped.
-    assert ids == ["ID-1", "ID-3"]
+    assert len(results) == 2
+    assert results[0] == (1, ["ID-1"])
+    assert results[1] == (3, ["ID-3"])
     assert mock_fetch.call_count == 3
 
 

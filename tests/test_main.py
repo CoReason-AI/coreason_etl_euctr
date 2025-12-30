@@ -52,8 +52,12 @@ def test_run_bronze_flow(tmp_path: Path) -> None:
     # Setup mocks
     # Mock harvest_ids generator directly since run_bronze calls it
     # We yield duplicate IDs to verify deduplication
-    mock_crawler.harvest_ids.return_value = iter(["ID1", "ID2", "ID2", "ID3"])
+    # harvest_ids now yields (page_num, [ids])
+    mock_crawler.harvest_ids.return_value = iter([(1, ["ID1", "ID2"]), (2, ["ID2", "ID3"])])
     mock_downloader.download_trial.return_value = True
+
+    # Setup crawl cursor check (return None to indicate no prior state)
+    mock_pipeline.get_crawl_cursor.return_value = None
 
     run_bronze(
         output_dir=str(tmp_path),
@@ -87,7 +91,10 @@ def test_run_bronze_no_hwm(tmp_path: Path) -> None:
     mock_crawler = MagicMock()
     mock_downloader = MagicMock()
     mock_pipeline = MagicMock()
+    # Explicitly return None for HWM so date_from becomes None
     mock_pipeline.get_high_water_mark.return_value = None
+    # Explicitly return None for crawl cursor
+    mock_pipeline.get_crawl_cursor.return_value = None
 
     # Empty harvest
     mock_crawler.harvest_ids.return_value = iter([])
@@ -104,10 +111,80 @@ def test_run_bronze_no_hwm(tmp_path: Path) -> None:
     mock_crawler.harvest_ids.assert_called_with(start_page=1, max_pages=1, date_from=None)
 
 
+def test_run_bronze_resumes_from_state(tmp_path: Path) -> None:
+    """Test run_bronze resumes from saved page cursor if start_page=1."""
+    mock_crawler = MagicMock()
+    mock_downloader = MagicMock()
+    mock_pipeline = MagicMock()
+
+    # Ensure HWM is None so date_from is None
+    mock_pipeline.get_high_water_mark.return_value = None
+    # Simulate saved state: last crawled page was 5
+    mock_pipeline.get_crawl_cursor.return_value = 5
+    mock_crawler.harvest_ids.return_value = iter([])
+
+    run_bronze(
+        output_dir=str(tmp_path),
+        start_page=1,  # Default
+        max_pages=1,
+        crawler=mock_crawler,
+        downloader=mock_downloader,
+        pipeline=mock_pipeline,
+    )
+
+    # Should start from 6 (5+1)
+    mock_crawler.harvest_ids.assert_called_with(start_page=6, max_pages=1, date_from=None)
+
+
+def test_run_bronze_explicit_start_page_overrides_state(tmp_path: Path) -> None:
+    """Test user provided start_page overrides saved state."""
+    mock_crawler = MagicMock()
+    mock_downloader = MagicMock()
+    mock_pipeline = MagicMock()
+
+    # Ensure HWM is None so date_from is None
+    mock_pipeline.get_high_water_mark.return_value = None
+    mock_pipeline.get_crawl_cursor.return_value = 5
+    mock_crawler.harvest_ids.return_value = iter([])
+
+    run_bronze(
+        output_dir=str(tmp_path),
+        start_page=10,  # Explicit
+        max_pages=1,
+        crawler=mock_crawler,
+        downloader=mock_downloader,
+        pipeline=mock_pipeline,
+    )
+
+    # Should start from 10
+    mock_crawler.harvest_ids.assert_called_with(start_page=10, max_pages=1, date_from=None)
+
+
+def test_run_bronze_saves_cursor(tmp_path: Path) -> None:
+    """Test that crawl cursor is saved after each page."""
+    mock_crawler = MagicMock()
+    mock_downloader = MagicMock()
+    mock_pipeline = MagicMock()
+
+    # Yield 2 pages
+    mock_crawler.harvest_ids.return_value = iter([(1, ["ID1"]), (2, ["ID2"])])
+
+    run_bronze(
+        output_dir=str(tmp_path),
+        max_pages=2,
+        crawler=mock_crawler,
+        downloader=mock_downloader,
+        pipeline=mock_pipeline,
+    )
+
+    # Should call set_crawl_cursor twice
+    mock_pipeline.set_crawl_cursor.assert_has_calls([call(1), call(2)])
+
+
 def test_run_bronze_default_downloader(tmp_path: Path) -> None:
     """Test run_bronze initialization when no downloader provided."""
     mock_crawler = MagicMock()
-    mock_crawler.extract_ids.return_value = []
+    mock_crawler.harvest_ids.return_value = iter([])
 
     # We pass downloader=None (default)
     # output_dir should be used to create LocalStorageBackend
@@ -136,15 +213,15 @@ def test_run_bronze_handles_crawl_exception(tmp_path: Path) -> None:
     # If harvest_ids crashes entirely (unhandled), run_bronze crashes (which is expected).
     # But let's assume harvest_ids yielded 'ID1' before crashing or finishing.
 
-    def gen() -> Generator[str, None, None]:
-        yield "ID1"
+    def gen() -> Generator[tuple[int, list[str]], None, None]:
+        yield (1, ["ID1"])
         # Simulate clean exit or continued yield after handled internal error
         # If we raise here, run_bronze loop will crash unless wrapped.
         # But run_bronze wraps the loop? No, it just iterates.
         # The Crawler.harvest_ids handles internal page errors.
         # So from run_bronze perspective, it just receives IDs.
         # So this test effectively tests that run_bronze processes whatever it gets.
-        yield "ID2"
+        yield (2, ["ID2"])
 
     mock_crawler.harvest_ids.return_value = gen()
 
@@ -164,7 +241,7 @@ def test_run_bronze_handles_download_exception(tmp_path: Path) -> None:
     mock_crawler = MagicMock()
     mock_downloader = MagicMock()
 
-    mock_crawler.harvest_ids.return_value = iter(["ID1", "ID2"])
+    mock_crawler.harvest_ids.return_value = iter([(1, ["ID1", "ID2"])])
     # ID1 fails, ID2 succeeds
     mock_downloader.download_trial.side_effect = [Exception("Disk Full"), True]
 
