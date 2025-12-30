@@ -134,14 +134,16 @@ def run_silver(
     parser = parser or Parser()
     pipeline = pipeline or Pipeline()
     loader = loader or PostgresLoader()
-    storage = storage_backend or LocalStorageBackend(Path(input_dir))
-
     if mode not in ["FULL", "UPSERT"]:
         raise ValueError("Mode must be 'FULL' or 'UPSERT'")
 
-    if not storage_backend and not Path(input_dir).exists():
-        logger.error(f"Input directory {input_dir} does not exist.")
-        return
+    if not storage_backend:
+        if not Path(input_dir).exists():
+            logger.error(f"Input directory {input_dir} does not exist.")
+            return
+        storage = LocalStorageBackend(Path(input_dir))
+    else:
+        storage = storage_backend
 
     # We need to process separate streams for each target table
     # Since Pipeline consumes an iterator, we need to generate separate iterators or lists.

@@ -51,7 +51,7 @@ def test_cli_load_defaults() -> None:
     with patch("sys.argv", ["euctr-etl", "load"]), patch("coreason_etl_euctr.main.run_silver") as mock_run:
         ret = main()
         assert ret == 0
-        mock_run.assert_called_once_with(input_dir="data/bronze", mode="FULL")
+        mock_run.assert_called_once_with(input_dir="data/bronze", mode="FULL", storage_backend=None)
 
 
 def test_cli_load_custom_args() -> None:
@@ -65,7 +65,7 @@ def test_cli_load_custom_args() -> None:
     ):
         ret = main()
         assert ret == 0
-        mock_run.assert_called_once_with(input_dir="custom/bronze", mode="UPSERT")
+        mock_run.assert_called_once_with(input_dir="custom/bronze", mode="UPSERT", storage_backend=None)
 
 
 def test_cli_help() -> None:

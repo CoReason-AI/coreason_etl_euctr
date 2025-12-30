@@ -275,55 +275,13 @@ def test_run_silver_parse_exception(tmp_path: Path) -> None:
     mock_loader.bulk_load_stream.assert_not_called()
 
 
-def test_run_silver_no_input_dir() -> None:
+def test_run_silver_no_input_dir(tmp_path: Path) -> None:
     """Test early exit if input dir missing and no backend provided."""
-    # Ensure LocalStorageBackend throws or run_silver catches missing dir for local
-    # In run_silver, if no backend, it creates LocalStorageBackend which creates dir.
-    # But current run_silver logic:
-    # storage = storage_backend or LocalStorageBackend(Path(input_dir))
-    # if not storage_backend and not Path(input_dir).exists(): ...
-
-    # Wait, LocalStorageBackend(Path(input_dir)) attempts to create the dir in __init__!
-    # "self.base_path.mkdir(parents=True, exist_ok=True)"
-    # So if we pass "/non/existent" and we have permissions, it creates it.
-    # If we don't have permissions (like root), it raises PermissionError.
-
-    # The previous test relied on Path(input_dir).exists() check BEFORE instantiating backend?
-    # No, before refactor, run_silver did:
-    # input_path = Path(input_dir)
-    # if not input_path.exists(): return
-
-    # NOW, run_silver does:
-    # storage = storage_backend or LocalStorageBackend(Path(input_dir))
-
-    # This instantiation triggers mkdir.
-    # If we want to test "directory does not exist" logic, we must use a path that CANNOT be
-    # created or rely on the check logic.
-    # BUT, run_silver attempts to create backend immediately.
-
-    # If we want to maintain the "return if not exists" behavior for local dir without creating
-    # it implicitly, we should check existence BEFORE creating LocalStorageBackend inside run_silver?
-    # Or LocalStorageBackend shouldn't auto-create?
-    # The LocalStorageBackend __init__ says: "self.base_path.mkdir(parents=True, exist_ok=True)"
-
-    # So run_silver will always create the directory if possible.
-    # The check "if not storage_backend and not Path(input_dir).exists():" is now AFTER backend creation.
-    # This means backend creation runs first.
-
-    # To fix the test (and logic), we should pass a mock storage backend to skip local creation,
-    # OR accept that local backend creates it.
-
-    # But if the intention of "test_run_silver_no_input_dir" was to test the safe-guard,
-    # that safe-guard is now effectively bypassed by LocalStorageBackend auto-creation.
-
-    # Let's adjust the test to simulate permission error or just remove it if auto-creation
-    # is desired feature.
-    # Since LocalStorageBackend is designed to create dirs (for Bronze output), it makes sense.
-    # For Silver input, auto-creating an empty input dir results in nothing to process,
-    # which is fine.
-
-    # However, to avoid PermissionError in tests using /non/existent, use tmp_path / "missing".
-    pass
+    mock_loader = MagicMock()
+    # Use a directory that definitely does not exist
+    missing_dir = tmp_path / "does_not_exist"
+    run_silver(input_dir=str(missing_dir), loader=mock_loader)
+    mock_loader.connect.assert_not_called()
 
 
 def test_run_silver_no_valid_data(tmp_path: Path) -> None:
