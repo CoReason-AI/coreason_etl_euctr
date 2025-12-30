@@ -9,6 +9,9 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 
+import json
+from pathlib import Path
+
 from coreason_etl_euctr.pipeline import Pipeline
 from pydantic import BaseModel
 
@@ -17,6 +20,33 @@ class MockModel(BaseModel):
     id: int
     name: str
     active: bool = True
+
+
+def test_get_crawl_cursor_none(tmp_path: Path) -> None:
+    """Test getting crawl cursor when not set."""
+    pipeline = Pipeline(state_file=tmp_path / "state.json")
+    assert pipeline.get_crawl_cursor() is None
+
+
+def test_set_and_get_crawl_cursor(tmp_path: Path) -> None:
+    """Test setting and getting crawl cursor."""
+    pipeline = Pipeline(state_file=tmp_path / "state.json")
+    pipeline.set_crawl_cursor(10)
+    assert pipeline.get_crawl_cursor() == 10
+
+    # Verify persistence
+    content = json.loads((tmp_path / "state.json").read_text())
+    assert content["crawl_last_page"] == 10
+
+
+def test_get_crawl_cursor_invalid_type(tmp_path: Path) -> None:
+    """Test getting crawl cursor when value is corrupted/invalid."""
+    state_file = tmp_path / "state.json"
+    state_file.write_text(json.dumps({"crawl_last_page": "invalid-int"}))
+
+    pipeline = Pipeline(state_file=state_file)
+    # Should handle ValueError and return None
+    assert pipeline.get_crawl_cursor() is None
 
 
 def test_stage_data_empty() -> None:

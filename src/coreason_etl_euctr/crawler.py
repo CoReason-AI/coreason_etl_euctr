@@ -10,7 +10,7 @@
 
 import time
 import unicodedata
-from typing import Generator, List, Optional
+from typing import Generator, List, Optional, Tuple
 
 import httpx
 from bs4 import BeautifulSoup, Comment
@@ -84,9 +84,9 @@ class Crawler:
         max_pages: int = 1,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-    ) -> Generator[str, None, None]:
+    ) -> Generator[Tuple[int, List[str]], None, None]:
         """
-        Iterate through search pages and yield EudraCT Numbers.
+        Iterate through search pages and yield (page_num, list_of_ids).
         Handles pagination and date filtering (CDC).
 
         Args:
@@ -96,7 +96,7 @@ class Crawler:
             date_to: End date for CDC (YYYY-MM-DD).
 
         Yields:
-            EudraCT Numbers as strings.
+            Tuple containing the page number and a list of EudraCT Numbers found on that page.
         """
         end_page = start_page + max_pages
         for i in range(start_page, end_page):
@@ -108,8 +108,7 @@ class Crawler:
                     logger.warning(f"No IDs found on page {i}. Stopping harvest.")
                     break
 
-                for trial_id in ids:
-                    yield trial_id
+                yield (i, ids)
 
             except Exception as e:
                 logger.error(f"Error harvesting page {i}: {e}")
