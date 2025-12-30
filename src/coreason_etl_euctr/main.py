@@ -16,19 +16,16 @@ import time
 from pathlib import Path
 from typing import Iterator, List, Optional, Sequence
 
-from loguru import logger
 from pydantic import BaseModel
 
 from coreason_etl_euctr.crawler import Crawler
 from coreason_etl_euctr.downloader import Downloader
 from coreason_etl_euctr.loader import BaseLoader
+from coreason_etl_euctr.logger import logger
 from coreason_etl_euctr.parser import Parser
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 from coreason_etl_euctr.storage import LocalStorageBackend, S3StorageBackend, StorageBackend
-
-logger.remove()
-logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"))
 
 
 def run_bronze(
@@ -97,11 +94,12 @@ def run_bronze(
     # Step 3: Download
     success_count = 0
     for trial_id in unique_ids:
+        context_logger = logger.bind(trial_id=trial_id)
         try:
             if downloader.download_trial(trial_id):
                 success_count += 1
         except Exception as e:
-            logger.error(f"Failed to download {trial_id}: {e}")
+            context_logger.error(f"Failed to download {trial_id}: {e}")
 
     # R.3.2.2: Update High-Water Mark (to today)
     # Ideally, we should update this based on the latest date found in the data or run start time.
@@ -197,10 +195,12 @@ def run_silver(
     logger.info(f"Processing {len(files_to_process)} new/modified files.")
 
     for file_path in files_to_process:
+        # Extract ID from filename
+        trial_id = file_path.stem
+        context_logger = logger.bind(trial_id=trial_id, file_path=str(file_path))
+
         try:
             content = file_path.read_text(encoding="utf-8")
-            # Extract ID from filename? Or parse it? Spec says filename is ID.
-            trial_id = file_path.stem
 
             # Parse Trial
             # We assume the file contains the source URL or we reconstruct it.
@@ -212,10 +212,10 @@ def run_silver(
                 trial = parser.parse_trial(content, url_source=url_source)
                 # Ensure ID matches filename just in case
                 if trial.eudract_number != trial_id:
-                    logger.warning(f"Filename {trial_id} mismatch with content {trial.eudract_number}")
+                    context_logger.warning(f"Filename {trial_id} mismatch with content {trial.eudract_number}")
                 trials.append(trial)
             except ValueError as e:
-                logger.warning(f"Failed to parse trial from {file_path}: {e}")
+                context_logger.warning(f"Failed to parse trial from {file_path}: {e}")
                 continue
 
             # Parse Drugs
@@ -227,7 +227,7 @@ def run_silver(
             conditions.extend(trial_conds)
 
         except Exception as e:
-            logger.error(f"Error processing file {file_path}: {e}")
+            context_logger.error(f"Error processing file {file_path}: {e}")
             continue
 
     if not trials:
@@ -354,6 +354,7 @@ def _get_storage_backend(args: argparse.Namespace) -> Optional[StorageBackend]:
     return None
 
 
+@logger.catch(onerror=lambda _: sys.exit(1))  # type: ignore[misc]
 def main() -> int:
     """
     CLI Entry Point.

@@ -15,8 +15,9 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Set, Union
 
-from loguru import logger
 from pydantic import BaseModel
+
+from coreason_etl_euctr.logger import logger
 
 
 class Pipeline:

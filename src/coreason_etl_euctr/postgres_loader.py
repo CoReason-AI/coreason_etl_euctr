@@ -13,9 +13,9 @@ import string
 from typing import IO, Any, List, Optional
 
 import psycopg
-from loguru import logger
 
 from coreason_etl_euctr.loader import BaseLoader
+from coreason_etl_euctr.logger import logger
 
 
 class PostgresLoader(BaseLoader):
