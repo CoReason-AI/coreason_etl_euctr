@@ -277,7 +277,6 @@ def test_run_silver_parse_exception(tmp_path: Path) -> None:
 
 def test_run_silver_no_input_dir() -> None:
     """Test early exit if input dir missing and no backend provided."""
-    mock_loader = MagicMock()
     # Ensure LocalStorageBackend throws or run_silver catches missing dir for local
     # In run_silver, if no backend, it creates LocalStorageBackend which creates dir.
     # But current run_silver logic:
@@ -298,11 +297,12 @@ def test_run_silver_no_input_dir() -> None:
     # storage = storage_backend or LocalStorageBackend(Path(input_dir))
 
     # This instantiation triggers mkdir.
-    # If we want to test "directory does not exist" logic, we must use a path that CANNOT be created or rely on the check logic.
+    # If we want to test "directory does not exist" logic, we must use a path that CANNOT be
+    # created or rely on the check logic.
     # BUT, run_silver attempts to create backend immediately.
 
-    # If we want to maintain the "return if not exists" behavior for local dir without creating it implicitly,
-    # we should check existence BEFORE creating LocalStorageBackend inside run_silver?
+    # If we want to maintain the "return if not exists" behavior for local dir without creating
+    # it implicitly, we should check existence BEFORE creating LocalStorageBackend inside run_silver?
     # Or LocalStorageBackend shouldn't auto-create?
     # The LocalStorageBackend __init__ says: "self.base_path.mkdir(parents=True, exist_ok=True)"
 
@@ -316,9 +316,11 @@ def test_run_silver_no_input_dir() -> None:
     # But if the intention of "test_run_silver_no_input_dir" was to test the safe-guard,
     # that safe-guard is now effectively bypassed by LocalStorageBackend auto-creation.
 
-    # Let's adjust the test to simulate permission error or just remove it if auto-creation is desired feature.
+    # Let's adjust the test to simulate permission error or just remove it if auto-creation
+    # is desired feature.
     # Since LocalStorageBackend is designed to create dirs (for Bronze output), it makes sense.
-    # For Silver input, auto-creating an empty input dir results in nothing to process, which is fine.
+    # For Silver input, auto-creating an empty input dir results in nothing to process,
+    # which is fine.
 
     # However, to avoid PermissionError in tests using /non/existent, use tmp_path / "missing".
     pass
