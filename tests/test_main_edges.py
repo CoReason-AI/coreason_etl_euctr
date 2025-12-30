@@ -158,10 +158,10 @@ def test_run_silver_storage_read_error(tmp_path: Path) -> None:
     backend = MagicMock()
     # Mock listing to return 2 files
     from coreason_etl_euctr.storage import StorageObject
-    backend.list_files.return_value = iter([
-        StorageObject(key="good.html", mtime=100),
-        StorageObject(key="bad.html", mtime=100)
-    ])
+
+    backend.list_files.return_value = iter(
+        [StorageObject(key="good.html", mtime=100), StorageObject(key="bad.html", mtime=100)]
+    )
 
     # Mock read to fail for one
     def read_side_effect(key: str) -> str:
@@ -187,11 +187,7 @@ def test_run_silver_storage_read_error(tmp_path: Path) -> None:
     mock_pipeline.stage_data.return_value = iter(["header"])
 
     run_silver(
-        input_dir="dummy",
-        storage_backend=backend,
-        parser=mock_parser,
-        pipeline=mock_pipeline,
-        loader=mock_loader
+        input_dir="dummy", storage_backend=backend, parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader
     )
 
     # Should have processed 'good.html' (parsed 1 trial)

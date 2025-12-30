@@ -125,7 +125,7 @@ def test_s3_list_files_pagination_complex(monkeypatch: pytest.MonkeyPatch) -> No
         ]
     }
     # Page 2: empty contents
-    p2 = {"Contents": []}
+    p2: dict[str, list[dict]] = {"Contents": []}  # type: ignore
     # Page 3: valid files and folder placeholder
     p3 = {
         "Contents": [
