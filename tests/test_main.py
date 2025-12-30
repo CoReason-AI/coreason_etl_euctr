@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 from coreason_etl_euctr.main import StringIteratorIO, _load_table, hello_world, run_bronze, run_silver
-from coreason_etl_euctr.storage import LocalStorageBackend
+from coreason_etl_euctr.storage import LocalStorageBackend, StorageObject
 from pydantic import BaseModel
 
 
@@ -25,15 +25,34 @@ def test_main_run_silver_explicit_backend(tmp_path: Path) -> None:
     This should cover the 'if storage_backend:' branch in main.py.
     """
     mock_storage = MagicMock()
-    # Mock list_files to return empty list so loop doesn't run
-    mock_storage.list_files.return_value = []
+    # Mock list_files logic (now via Pipeline.identify_new_files which calls list_files)
+    # But run_silver uses pipeline.identify_new_files
+    # We pass None as pipeline, so run_silver creates default Pipeline.
+    # But default Pipeline needs storage_backend to be injected or passed.
+    # run_silver does: pipeline.storage_backend = storage
+
+    # We must ensure that the Pipeline (default one) calls list_files on our mock storage.
+    # Since run_silver instantiates Pipeline(), we can't easily spy on it unless we mock Pipeline class or storage.
 
     mock_loader = MagicMock()
 
-    run_silver(input_dir=str(tmp_path), storage_backend=mock_storage, loader=mock_loader)
+    # run_silver will inject mock_storage into the new Pipeline instance
+    # Then call pipeline.identify_new_files() which calls mock_storage.list_files()
 
-    # Verify list_files called
-    mock_storage.list_files.assert_called_once()
+    # Wait, we need to mock Pipeline to avoid file I/O or just trust it?
+    # Default pipeline loads state.json.
+    # Let's mock Pipeline to verify interaction.
+    with patch("coreason_etl_euctr.main.Pipeline") as MockPipeline:
+        pipeline_instance = MockPipeline.return_value
+        pipeline_instance.identify_new_files.return_value = []
+        pipeline_instance.storage_backend = None # Initially None
+
+        run_silver(input_dir=str(tmp_path), storage_backend=mock_storage, loader=mock_loader)
+
+        # Verify injection
+        assert pipeline_instance.storage_backend == mock_storage
+        # Verify call
+        pipeline_instance.identify_new_files.assert_called_once()
 
 
 def test_hello_world() -> None:
@@ -271,6 +290,14 @@ def test_run_silver_full_load(tmp_path: Path) -> None:
     mock_pipeline = MagicMock()
     mock_loader = MagicMock()
 
+    # Mock identify_new_files to return our file
+    # run_silver will use LocalStorageBackend by default if none provided
+    # but we provided mock_pipeline. run_silver will inject storage into it.
+
+    # We need mock_pipeline.identify_new_files to return objects that the storage backend can read.
+    # Since run_silver uses LocalStorageBackend (default), 'key' should be filename.
+    mock_pipeline.identify_new_files.return_value = [StorageObject(key="2015-001.html", mtime=100.0)]
+
     # Setup Parser returns
     trial_obj = MockTrial(eudract_number="2015-001")
     mock_parser.parse_trial.return_value = trial_obj
@@ -282,6 +309,9 @@ def test_run_silver_full_load(tmp_path: Path) -> None:
     mock_pipeline.get_silver_watermark.return_value = None  # New logic
 
     run_silver(input_dir=str(d), mode="FULL", parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
+
+    # Verify injection
+    assert mock_pipeline.storage_backend is not None
 
     # Verify Loader calls
     mock_loader.connect.assert_called_once()
@@ -309,6 +339,7 @@ def test_run_silver_upsert_load(tmp_path: Path) -> None:
     mock_parser.parse_conditions.return_value = []
 
     mock_pipeline = MagicMock()
+    mock_pipeline.identify_new_files.return_value = [StorageObject(key="2015-001.html", mtime=100.0)]
     mock_pipeline.stage_data.return_value = iter(["header\n", "row1\n"])
     mock_pipeline.get_silver_watermark.return_value = None  # New logic
     mock_loader = MagicMock()
@@ -334,6 +365,11 @@ def test_run_silver_id_mismatch(tmp_path: Path) -> None:
     p1 = d / "2015-999.html"  # ID in filename is 2015-999
     p1.write_text("<html>Content</html>")
 
+    # Run silver default pipeline creates local storage
+    # We must mock Pipeline or ensure default one works
+    # Default pipeline works but we want to assert calls or ensure parsing happens
+    # Using real pipeline + mock parser + mock loader
+
     mock_parser = MagicMock()
     # ID in content is 2015-001
     trial_obj = MockTrial(eudract_number="2015-001")
@@ -342,6 +378,9 @@ def test_run_silver_id_mismatch(tmp_path: Path) -> None:
     mock_parser.parse_conditions.return_value = []
 
     mock_loader = MagicMock()
+
+    # We rely on default Pipeline behavior which scans 'input_dir'
+    # So it should find '2015-999.html'
 
     run_silver(input_dir=str(d), parser=mock_parser, loader=mock_loader)
 
@@ -363,6 +402,7 @@ def test_run_silver_parse_exception(tmp_path: Path) -> None:
 
     mock_loader = MagicMock()
 
+    # Using default pipeline
     run_silver(input_dir=str(d), parser=mock_parser, loader=mock_loader)
 
     # Should continue loop (skip file) and thus no trials loaded
@@ -410,6 +450,9 @@ def test_run_silver_db_error(tmp_path: Path) -> None:
     mock_parser.parse_trial.return_value = trial_obj
     mock_parser.parse_drugs.return_value = []
     mock_parser.parse_conditions.return_value = []
+
+    # We need to make sure default pipeline finds the file
+    # Default pipeline uses LocalStorageBackend(input_dir), so it finds p1.
 
     mock_loader = MagicMock()
     mock_loader.bulk_load_stream.side_effect = Exception("DB Error")

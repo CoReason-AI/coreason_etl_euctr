@@ -160,6 +160,10 @@ def run_silver(
             return
         storage = LocalStorageBackend(Path(input_dir))
 
+    # Inject storage into pipeline if not already present
+    if not pipeline.storage_backend:
+        pipeline.storage_backend = storage
+
     # We need to process separate streams for each target table
     # Since Pipeline consumes an iterator, we need to generate separate iterators or lists.
     # For simplicity and to match the 'bulk_load_stream' interface, we will:
@@ -175,41 +179,9 @@ def run_silver(
     drugs = []
     conditions = []
 
-    files = list(storage.list_files("*.html"))
-    logger.info(f"Found {len(files)} HTML files to process.")
-
-    # R.3.2.3: Incremental Processing (Skip unchanged files)
-    silver_watermark = pipeline.get_silver_watermark()
+    # R.3.2.3: Incremental Processing using Pipeline logic
     current_run_start_time = time.time()
-
-    # If this is the first run, watermark is None, so we process everything.
-    # If we have a watermark, we skip files older than it.
-    # If we have a cutoff time (start time), we skip files strictly newer than it (future).
-    files_to_process = []
-    skipped_old_count = 0
-    skipped_future_count = 0
-
-    for f in files:
-        mtime = f.mtime
-
-        # Check Lower Bound (Old files)
-        if silver_watermark and mtime <= silver_watermark:
-            skipped_old_count += 1
-            continue
-
-        # Check Upper Bound (Future/Current Run files)
-        # We use current_run_start_time as the cutoff.
-        # Files created *after* we started this run should be picked up in the NEXT run.
-        if mtime > current_run_start_time:
-            skipped_future_count += 1
-            continue
-
-        files_to_process.append(f)
-
-    if skipped_old_count > 0:
-        logger.info(f"Skipping {skipped_old_count} unchanged files (mtime <= {silver_watermark}).")
-    if skipped_future_count > 0:
-        logger.info(f"Skipping {skipped_future_count} future files (mtime > {current_run_start_time}).")
+    files_to_process = pipeline.identify_new_files("*.html")
 
     logger.info(f"Processing {len(files_to_process)} new/modified files.")
 

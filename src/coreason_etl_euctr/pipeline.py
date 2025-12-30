@@ -11,13 +11,15 @@
 import csv
 import io
 import json
+import time
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterable, Optional, Set, Union
+from typing import Any, Dict, Generator, Iterable, List, Optional, Set, Union
 
 from pydantic import BaseModel
 
 from coreason_etl_euctr.logger import logger
+from coreason_etl_euctr.storage import StorageBackend, StorageObject
 
 
 class Pipeline:
@@ -26,14 +28,18 @@ class Pipeline:
     ready for native bulk loading, and managing the orchestration state.
     """
 
-    def __init__(self, state_file: Union[str, Path] = "data/state.json") -> None:
+    def __init__(
+        self, state_file: Union[str, Path] = "data/state.json", storage_backend: Optional[StorageBackend] = None
+    ) -> None:
         """
         Initialize the Pipeline.
 
         Args:
             state_file: Path to the JSON state file.
+            storage_backend: Optional StorageBackend for identifying new files.
         """
         self.state_file = Path(state_file)
+        self.storage_backend = storage_backend
 
     def load_state(self) -> Dict[str, Any]:
         """
@@ -177,6 +183,51 @@ class Pipeline:
         state = self.load_state()
         state["crawl_last_page"] = page
         self.save_state(state)
+
+    def identify_new_files(self, pattern: str = "*.html") -> List[StorageObject]:
+        """
+        Identify files that need to be processed (CDC).
+        Uses High-Water Mark logic based on file modification time.
+
+        Args:
+            pattern: File pattern to search for (default: *.html).
+
+        Returns:
+            List of StorageObject representing new or updated files.
+        """
+        if not self.storage_backend:
+            logger.warning("StorageBackend not provided to Pipeline. Cannot identify files.")
+            return []
+
+        silver_watermark = self.get_silver_watermark()
+        current_run_start_time = time.time()
+
+        files = list(self.storage_backend.list_files(pattern))
+        files_to_process = []
+        skipped_old_count = 0
+        skipped_future_count = 0
+
+        for f in files:
+            mtime = f.mtime
+
+            # Check Lower Bound (Old files)
+            if silver_watermark and mtime <= silver_watermark:
+                skipped_old_count += 1
+                continue
+
+            # Check Upper Bound (Future/Current Run files)
+            if mtime > current_run_start_time:
+                skipped_future_count += 1
+                continue
+
+            files_to_process.append(f)
+
+        if skipped_old_count > 0:
+            logger.info(f"Skipping {skipped_old_count} unchanged files (mtime <= {silver_watermark}).")
+        if skipped_future_count > 0:
+            logger.info(f"Skipping {skipped_future_count} future files (mtime > {current_run_start_time}).")
+
+        return files_to_process
 
     def stage_data(self, models: Iterable[BaseModel]) -> Generator[str, None, None]:
         """

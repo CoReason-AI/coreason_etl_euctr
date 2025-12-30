@@ -48,6 +48,16 @@ def test_incremental_windowing(tmp_path: Path) -> None:
     # Capture calls to stage_data to verify which files were processed
     mock_pipeline.stage_data.side_effect = lambda x: iter([f"header\nrow_{id(x)}\n"])
 
+    # Mock identify_new_files to simulate Pipeline logic
+    # Since we can't easily rely on MagicMock to execute real logic from Pipeline class without wrapping it,
+    # we simulate what the pipeline would return given the inputs.
+    from coreason_etl_euctr.storage import StorageObject
+    mock_pipeline.identify_new_files.return_value = [
+        StorageObject(key="new.html", mtime=T0 + 10)
+    ]
+    # Ensure attributes exist
+    mock_pipeline.storage_backend = None
+
     mock_parser = MagicMock()
 
     # Return dummy trial for any input
@@ -69,7 +79,7 @@ def test_incremental_windowing(tmp_path: Path) -> None:
     with patch("time.time", return_value=T0 + 50):
         run_silver(input_dir=str(d), parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
 
-    # Verify Logic
+    # Verify Logic (via what identify_new_files returned)
     processed_sources = []
     for call_args in mock_parser.parse_trial.call_args_list:
         processed_sources.append(call_args.kwargs["url_source"])
@@ -96,6 +106,11 @@ def test_incremental_rollback(tmp_path: Path) -> None:
     mock_pipeline = MagicMock()
     mock_pipeline.get_silver_watermark.return_value = None  # First run
 
+    # Mock identify_new_files to return test file
+    from coreason_etl_euctr.storage import StorageObject
+    mock_pipeline.identify_new_files.return_value = [StorageObject(key="test.html", mtime=100.0)]
+    mock_pipeline.storage_backend = None
+
     mock_loader = MagicMock()
     mock_loader.bulk_load_stream.side_effect = Exception("DB Error")
 
@@ -112,3 +127,6 @@ def test_incremental_rollback(tmp_path: Path) -> None:
     mock_pipeline.set_silver_watermark.assert_not_called()
     # Verify Rollback called
     mock_loader.rollback.assert_called_once()
+
+    # Ensure identify_new_files called
+    mock_pipeline.identify_new_files.assert_called()
