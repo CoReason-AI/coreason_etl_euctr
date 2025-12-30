@@ -348,15 +348,24 @@ def _get_storage_backend(args: argparse.Namespace) -> Optional[StorageBackend]:
     Resolve Storage Backend configuration from CLI args and Env Vars.
     Priority: CLI > Env > None (Default).
     """
-    s3_bucket = args.s3_bucket or os.getenv("EUCTR_S3_BUCKET")
-    s3_prefix = args.s3_prefix or os.getenv("EUCTR_S3_PREFIX", "")
-    s3_region = args.s3_region or os.getenv("EUCTR_S3_REGION")
+    # Use getattr to safely access args that might not be present if subparser didn't add them
+    # although we plan to add them to both.
+    s3_bucket = getattr(args, "s3_bucket", None) or os.getenv("EUCTR_S3_BUCKET")
+    s3_prefix = getattr(args, "s3_prefix", None) or os.getenv("EUCTR_S3_PREFIX", "")
+    s3_region = getattr(args, "s3_region", None) or os.getenv("EUCTR_S3_REGION")
 
     if s3_bucket:
         logger.info(f"Using S3 Storage Backend: s3://{s3_bucket}/{s3_prefix}")
         return S3StorageBackend(bucket_name=s3_bucket, prefix=s3_prefix, region_name=s3_region)
 
     return None
+
+
+def _add_s3_args(parser: argparse.ArgumentParser) -> None:
+    """Helper to add S3 configuration arguments to a parser."""
+    parser.add_argument("--s3-bucket", help="S3 Bucket name for storage")
+    parser.add_argument("--s3-prefix", help="S3 Prefix for storage")
+    parser.add_argument("--s3-region", help="AWS Region for S3")
 
 
 @logger.catch(onerror=lambda _: sys.exit(1))  # type: ignore[misc]
@@ -372,16 +381,13 @@ def main() -> int:
     parser_crawl.add_argument("--output-dir", default="data/bronze", help="Directory to save HTML files (Local Only)")
     parser_crawl.add_argument("--start-page", type=int, default=1, help="Page number to start crawling")
     parser_crawl.add_argument("--max-pages", type=int, default=1, help="Number of pages to crawl")
-
-    # S3 Configuration for Crawl
-    parser_crawl.add_argument("--s3-bucket", help="S3 Bucket name for Bronze storage")
-    parser_crawl.add_argument("--s3-prefix", help="S3 Prefix for Bronze storage")
-    parser_crawl.add_argument("--s3-region", help="AWS Region for S3")
+    _add_s3_args(parser_crawl)
 
     # Silver / Load
     parser_load = subparsers.add_parser("load", help="Run the Silver layer (Parser/Loader)")
     parser_load.add_argument("--input-dir", default="data/bronze", help="Directory containing raw HTML files")
     parser_load.add_argument("--mode", choices=["FULL", "UPSERT"], default="FULL", help="Loading mode")
+    _add_s3_args(parser_load)
 
     args = parser.parse_args()
 
