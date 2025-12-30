@@ -17,7 +17,6 @@ import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from coreason_etl_euctr.logger import logger
-
 from coreason_etl_euctr.storage import LocalStorageBackend, StorageBackend
 from coreason_etl_euctr.utils import is_retryable_error
 

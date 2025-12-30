@@ -33,7 +33,7 @@ def test_harvest_transient_failure_recovery(mock_client: MagicMock) -> None:
     # The first two return values should raise HTTPStatusError when raise_for_status() is called.
     mock_resp_fail = MagicMock()
     mock_resp_fail.status_code = 500
-    mock_resp_fail.raise_for_status.side_effect = httpx.HTTPStatusError("500", request=None, response=error_resp)
+    mock_resp_fail.raise_for_status.side_effect = httpx.HTTPStatusError("500", request=None, response=error_resp)  # type: ignore[arg-type]
 
     mock_resp_ok = MagicMock()
     mock_resp_ok.status_code = 200
@@ -65,7 +65,7 @@ def test_harvest_persistent_failure_skip(mock_client: MagicMock) -> None:
     # We test the harvest loop logic here, assuming fetch_search_page's retry logic works as tested above.
     with patch.object(crawler, "fetch_search_page") as mock_fetch:
         mock_fetch.side_effect = [
-            httpx.HTTPStatusError("500 Permanent", request=None, response=None),  # Page 1 fails
+            httpx.HTTPStatusError("500 Permanent", request=None, response=None),  # type: ignore[arg-type] # Page 1 fails
             "<div><span>EudraCT Number:</span> 2023-002</div>",  # Page 2 succeeds
         ]
 

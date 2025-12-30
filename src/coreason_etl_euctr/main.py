@@ -19,9 +19,9 @@ from typing import Iterator, List, Optional, Sequence
 from pydantic import BaseModel
 
 from coreason_etl_euctr.crawler import Crawler
-from coreason_etl_euctr.logger import logger
 from coreason_etl_euctr.downloader import Downloader
 from coreason_etl_euctr.loader import BaseLoader
+from coreason_etl_euctr.logger import logger
 from coreason_etl_euctr.parser import Parser
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
@@ -354,7 +354,7 @@ def _get_storage_backend(args: argparse.Namespace) -> Optional[StorageBackend]:
     return None
 
 
-@logger.catch(onerror=lambda _: sys.exit(1))
+@logger.catch(onerror=lambda _: sys.exit(1))  # type: ignore[misc]
 def main() -> int:
     """
     CLI Entry Point.

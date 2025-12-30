@@ -14,10 +14,9 @@ from typing import Generator, List, Optional
 
 import httpx
 from bs4 import BeautifulSoup, Comment
-
-from coreason_etl_euctr.logger import logger
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
+from coreason_etl_euctr.logger import logger
 from coreason_etl_euctr.utils import is_retryable_error
 
 
