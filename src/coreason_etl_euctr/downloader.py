@@ -8,7 +8,6 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-import hashlib
 import time
 from pathlib import Path
 from typing import List, Optional, Union
@@ -19,6 +18,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 from coreason_etl_euctr.logger import logger
 from coreason_etl_euctr.storage import LocalStorageBackend, StorageBackend
 from coreason_etl_euctr.utils import is_retryable_error
+from coreason_etl_euctr.utils.hashing import compute_content_hash
 
 
 class Downloader:
@@ -140,7 +140,7 @@ class Downloader:
         meta_key = f"{eudract_number}.meta"
 
         # Calculate Hash (R.3.2.3)
-        new_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        new_hash = compute_content_hash(content)
 
         # Check existing hash if meta exists
         if self.storage.exists(meta_key):
