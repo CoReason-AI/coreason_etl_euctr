@@ -9,9 +9,8 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import pytest
-from pydantic import ValidationError
-
 from coreason_etl_euctr.models import EuTrial, EuTrialCondition, EuTrialDrug
+from pydantic import ValidationError
 
 
 def test_eutrial_constraints() -> None:

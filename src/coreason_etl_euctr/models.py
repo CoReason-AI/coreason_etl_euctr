@@ -45,9 +45,7 @@ class EuTrialDrug(BaseModel):
     drug_name: Optional[str] = Field(None, max_length=255, description="Trade name of the drug.")
     active_ingredient: Optional[str] = Field(None, max_length=255, description="Name of the active substance.")
     cas_number: Optional[str] = Field(None, max_length=50, description="CAS number if available.")
-    pharmaceutical_form: Optional[str] = Field(
-        None, max_length=255, description="Pharmaceutical form (e.g., Tablet)."
-    )
+    pharmaceutical_form: Optional[str] = Field(None, max_length=255, description="Pharmaceutical form (e.g., Tablet).")
 
 
 class EuTrialCondition(BaseModel):
