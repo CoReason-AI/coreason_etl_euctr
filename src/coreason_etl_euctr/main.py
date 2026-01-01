@@ -36,6 +36,7 @@ def run_bronze(
     downloader: Optional[Downloader] = None,
     pipeline: Optional[Pipeline] = None,
     storage_backend: Optional[StorageBackend] = None,
+    ignore_hwm: bool = False,
 ) -> None:
     """
     Execute the Bronze Layer workflow: Crawl -> Deduplicate -> Download.
@@ -49,6 +50,7 @@ def run_bronze(
         downloader: Optional injected Downloader instance.
         pipeline: Optional injected Pipeline instance (for state management).
         storage_backend: Optional injected StorageBackend (Local or S3).
+        ignore_hwm: If True, ignore the High-Water Mark and force a full crawl (R.3.3.1).
     """
     crawler = crawler or Crawler()
     if not downloader:
@@ -57,21 +59,27 @@ def run_bronze(
     pipeline = pipeline or Pipeline()
 
     # R.3.2.2: Retrieve High-Water Mark
-    high_water_mark = pipeline.get_high_water_mark()
-    date_from = high_water_mark.isoformat() if high_water_mark else None
+    date_from = None
+    if not ignore_hwm:
+        high_water_mark = pipeline.get_high_water_mark()
+        date_from = high_water_mark.isoformat() if high_water_mark else None
+
     if date_from:
         logger.info(f"Performing Delta Crawl from {date_from}")
+    elif ignore_hwm:
+        logger.info("Performing Full Re-crawl (Ignoring HWM as requested)")
     else:
         logger.info("Performing Full Crawl (No HWM found)")
 
     # Check if we should resume from state
     # If start_page is default (1) and we have a saved cursor, use it.
     # If user explicitly provided start_page != 1, we respect that.
-    crawl_cursor = pipeline.get_crawl_cursor()
-    if start_page == 1 and crawl_cursor:
-        # Resume from next page
-        start_page = crawl_cursor + 1
-        logger.info(f"Resuming crawl from page {start_page} (based on saved state).")
+    if not ignore_hwm:
+        crawl_cursor = pipeline.get_crawl_cursor()
+        if start_page == 1 and crawl_cursor:
+            # Resume from next page
+            start_page = crawl_cursor + 1
+            logger.info(f"Resuming crawl from page {start_page} (based on saved state).")
 
     # R.3.1.1: Store harvested IDs in an intermediate file
     ids_file = Path(output_dir) / "ids.csv"
@@ -398,6 +406,9 @@ def main() -> int:
     parser_crawl.add_argument("--output-dir", default="data/bronze", help="Directory to save HTML files (Local Only)")
     parser_crawl.add_argument("--start-page", type=int, default=1, help="Page number to start crawling")
     parser_crawl.add_argument("--max-pages", type=int, default=1, help="Number of pages to crawl")
+    parser_crawl.add_argument(
+        "--ignore-hwm", action="store_true", help="Ignore High-Water Mark and force full re-crawl"
+    )
     _add_s3_args(parser_crawl)
 
     # Silver / Load
@@ -411,7 +422,11 @@ def main() -> int:
     if args.command == "crawl":
         storage = _get_storage_backend(args)
         run_bronze(
-            output_dir=args.output_dir, start_page=args.start_page, max_pages=args.max_pages, storage_backend=storage
+            output_dir=args.output_dir,
+            start_page=args.start_page,
+            max_pages=args.max_pages,
+            storage_backend=storage,
+            ignore_hwm=args.ignore_hwm,
         )
     elif args.command == "load":
         # S3 Support for Load
