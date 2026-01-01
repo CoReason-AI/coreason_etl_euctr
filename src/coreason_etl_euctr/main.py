@@ -74,11 +74,12 @@ def run_bronze(
     # Check if we should resume from state
     # If start_page is default (1) and we have a saved cursor, use it.
     # If user explicitly provided start_page != 1, we respect that.
-    crawl_cursor = pipeline.get_crawl_cursor()
-    if start_page == 1 and crawl_cursor:
-        # Resume from next page
-        start_page = crawl_cursor + 1
-        logger.info(f"Resuming crawl from page {start_page} (based on saved state).")
+    if not ignore_hwm:
+        crawl_cursor = pipeline.get_crawl_cursor()
+        if start_page == 1 and crawl_cursor:
+            # Resume from next page
+            start_page = crawl_cursor + 1
+            logger.info(f"Resuming crawl from page {start_page} (based on saved state).")
 
     # R.3.1.1: Store harvested IDs in an intermediate file
     ids_file = Path(output_dir) / "ids.csv"
