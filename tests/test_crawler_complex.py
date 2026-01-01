@@ -55,31 +55,29 @@ def test_harvest_transient_failure_recovery(mock_client: MagicMock) -> None:
     assert mock_client.get.call_count == 3
 
 
-def test_harvest_persistent_failure_skip(mock_client: MagicMock) -> None:
+def test_harvest_persistent_failure_propagates(mock_client: MagicMock) -> None:
     """
     Verify that if a page fails consistently (exhausting retries),
-    harvest_ids logs the error and continues to the next page.
+    harvest_ids raises the exception (Stop on Error).
     """
     crawler = Crawler(client=mock_client)
 
-    # Mock fetch_search_page to simulate exhausted retries (raising exception)
-    # We test the harvest loop logic here, assuming fetch_search_page's retry logic works as tested above.
     with patch.object(crawler, "fetch_search_page") as mock_fetch:
         mock_fetch.side_effect = [
             httpx.HTTPStatusError("500 Permanent", request=None, response=None),  # type: ignore[arg-type] # Page 1 fails
             "<div><span>EudraCT Number:</span> 2023-002</div>",  # Page 2 succeeds
         ]
 
-        results = list(crawler.harvest_ids(start_page=1, max_pages=2))
+        with pytest.raises(httpx.HTTPStatusError, match="500 Permanent"):
+            list(crawler.harvest_ids(start_page=1, max_pages=2))
 
-    assert len(results) == 1
-    assert results[0] == (2, ["2023-002"])
-    assert mock_fetch.call_count == 2
+    # Should have stopped after page 1
+    assert mock_fetch.call_count == 1
 
 
-def test_harvest_mixed_results_sequence(mock_client: MagicMock) -> None:
+def test_harvest_mixed_results_sequence_stops_on_error(mock_client: MagicMock) -> None:
     """
-    Verify complex flow: Success -> Error (Skipped) -> Success -> Empty (Stop).
+    Verify complex flow: Success -> Error (Stop).
     """
     crawler = Crawler(client=mock_client)
 
@@ -88,17 +86,19 @@ def test_harvest_mixed_results_sequence(mock_client: MagicMock) -> None:
             "<div><span>EudraCT Number:</span> ID-1</div>",  # Page 1: OK
             Exception("Simulated Error"),  # Page 2: Error
             "<div><span>EudraCT Number:</span> ID-3</div>",  # Page 3: OK
-            "<html>No Results</html>",  # Page 4: Empty -> Stop
-            "<div><span>EudraCT Number:</span> ID-5</div>",  # Page 5: Should not be reached
         ]
 
-        results = list(crawler.harvest_ids(start_page=1, max_pages=10))
+        gen = crawler.harvest_ids(start_page=1, max_pages=10)
 
-    assert len(results) == 2
-    assert results[0] == (1, ["ID-1"])
-    assert results[1] == (3, ["ID-3"])
-    # Should stop after calling page 4
-    assert mock_fetch.call_count == 4
+        # 1 OK
+        assert next(gen) == (1, ["ID-1"])
+
+        # 2 Error
+        with pytest.raises(Exception, match="Simulated Error"):
+            next(gen)
+
+    # Should stop after calling page 2
+    assert mock_fetch.call_count == 2
 
 
 def test_extract_ids_malformed_html() -> None:
