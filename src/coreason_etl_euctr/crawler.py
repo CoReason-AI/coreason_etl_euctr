@@ -100,19 +100,18 @@ class Crawler:
         """
         end_page = start_page + max_pages
         for i in range(start_page, end_page):
-            try:
-                html = self.fetch_search_page(page_num=i, date_from=date_from, date_to=date_to)
-                ids = self.extract_ids(html)
+            # We explicitly do NOT catch exceptions here (except for logging context if needed),
+            # because we want failures to propagate up to the caller (Orchestrator).
+            # This ensures that if a page fails, we don't mark it as 'completed' in the state,
+            # allowing the pipeline to resume from this page on the next run.
+            html = self.fetch_search_page(page_num=i, date_from=date_from, date_to=date_to)
+            ids = self.extract_ids(html)
 
-                if not ids:
-                    logger.warning(f"No IDs found on page {i}. Stopping harvest.")
-                    break
+            if not ids:
+                logger.warning(f"No IDs found on page {i}. Stopping harvest.")
+                break
 
-                yield (i, ids)
-
-            except Exception as e:
-                logger.error(f"Error harvesting page {i}: {e}")
-                continue
+            yield (i, ids)
 
     def extract_ids(self, html_content: str) -> List[str]:
         """
