@@ -16,6 +16,6 @@ __version__ = "0.1.0"
 __author__ = "Gowtham A Rao"
 __email__ = "gowtham.rao@coreason.ai"
 
-from .main import main, run_pipeline
+from .main import hello_world
 
-__all__ = ["main", "run_pipeline"]
+__all__ = ["hello_world"]
