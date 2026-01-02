@@ -15,10 +15,6 @@ from typing import Optional, Sequence
 
 from loguru import logger
 
-# Configure logging
-logger.remove()
-logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"))
-
 
 class ETLConfig:
     """Configuration for the ETL pipeline."""
@@ -28,6 +24,20 @@ class ETLConfig:
         # Defaults per R.6.2.1
         self.target_countries = ["3rd", "GB", "DE"]
         self.sleep_seconds = 1.0
+
+
+def setup_logging(level: str = "INFO") -> None:
+    """
+    Configures loguru logging.
+    Falls back to INFO if an invalid level is provided.
+    """
+    logger.remove()
+    try:
+        logger.add(sys.stderr, level=level)
+    except ValueError:
+        # Fallback for invalid log levels
+        logger.add(sys.stderr, level="INFO")
+        logger.warning(f"Invalid LOG_LEVEL '{level}' specified. Defaulting to INFO.")
 
 
 def run_pipeline(config: ETLConfig) -> None:
@@ -58,9 +68,14 @@ def parse_args(args: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def main() -> None:  # pragma: no cover
-    args = parse_args()
-    config = ETLConfig(full_load=args.full)
-    run_pipeline(config)
+    setup_logging(os.getenv("LOG_LEVEL", "INFO"))
+    try:
+        args = parse_args()
+        config = ETLConfig(full_load=args.full)
+        run_pipeline(config)
+    except Exception as e:
+        logger.critical(f"Unhandled exception: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":  # pragma: no cover
