@@ -241,24 +241,13 @@ def test_harvest_ids_stops_on_empty_page(mock_httpx_client: MagicMock) -> None:
     assert mock_httpx_client.get.call_count == 2
 
 
-def test_harvest_ids_handles_exception(mock_httpx_client: MagicMock) -> None:
-    """Test that harvest_ids continues or handles exception on a page."""
+def test_harvest_ids_stops_on_exception(mock_httpx_client: MagicMock) -> None:
+    """Test that harvest_ids stops and propagates exception on a page failure."""
     page1 = """<div><span>EudraCT Number:</span> <span>ID-1</span></div>"""
     page3 = """<div><span>EudraCT Number:</span> <span>ID-3</span></div>"""
 
-    # Mock: Page 1 success, Page 2 fails (exception), Page 3 success
-    # Note: harvest_ids catches Exception and logs error, then continues.
-    # However, fetch_search_page raises HTTPStatusError which is an Exception.
-
-    # Page 2 failure
-    error_resp = MagicMock(status_code=500)
-
-    def raise_http_error(*args: object, **kwargs: object) -> None:
-        raise httpx.HTTPStatusError("500 Error", request=MagicMock(), response=error_resp)
-
-    # We need to mock the sequence of calls to client.get
-    # Since fetch_search_page has @retry, it might try multiple times.
-    # We'll mock fetch_search_page directly to avoid testing retry logic here (tested separately).
+    # Mock: Page 1 success, Page 2 fails (exception)
+    # Goal: Ensure exception propagates and iteration stops (for Resume logic).
 
     crawler = Crawler(client=mock_httpx_client)
 
@@ -269,13 +258,19 @@ def test_harvest_ids_handles_exception(mock_httpx_client: MagicMock) -> None:
             page3,
         ]
 
-        results = list(crawler.harvest_ids(start_page=1, max_pages=3))
+        # Use generator manually to verify partial yield and then crash
+        gen = crawler.harvest_ids(start_page=1, max_pages=3)
 
-    # Should get ID-1 and ID-3. Page 2 skipped.
-    assert len(results) == 2
-    assert results[0] == (1, ["ID-1"])
-    assert results[1] == (3, ["ID-3"])
-    assert mock_fetch.call_count == 3
+        # First page should succeed
+        p1 = next(gen)
+        assert p1 == (1, ["ID-1"])
+
+        # Second page should raise exception
+        with pytest.raises(Exception, match="Simulated Fetch Error"):
+            next(gen)
+
+    # Verify we stopped at page 2 attempt
+    assert mock_fetch.call_count == 2
 
 
 def test_harvest_ids_passes_dates(mock_httpx_client: MagicMock) -> None:
