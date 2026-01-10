@@ -108,23 +108,25 @@ def parse_flexible_date(date_str: Optional[str]) -> Optional[date]:
     if not date_str:
         return None
 
-    # Formats: YYYY-MM-DD or DD/MM/YYYY
+    # List of formats to try
     # EU CTR usually uses YYYY-MM-DD but let's be robust
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d").date()
-    except ValueError:
-        pass
+    formats = [
+        "%Y-%m-%d",  # ISO
+        "%d/%m/%Y",  # DD/MM/YYYY
+        "%d.%m.%Y",  # DD.MM.YYYY
+        "%d-%m-%Y",  # DD-MM-YYYY
+        "%Y/%m/%d",  # YYYY/MM/DD
+        "%d %b %Y",  # 31 Jan 2023
+        "%d %B %Y",  # 31 January 2023
+        "%b %d, %Y",  # Jan 31, 2023
+        "%B %d, %Y",  # January 31, 2023
+    ]
 
-    try:
-        return datetime.strptime(date_str, "%d/%m/%Y").date()
-    except ValueError:
-        pass
-
-    # Try with dots (German style) DD.MM.YYYY
-    try:
-        return datetime.strptime(date_str, "%d.%m.%Y").date()
-    except ValueError:
-        pass
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str, fmt).date()
+        except ValueError:
+            continue
 
     # Requirement R.4.4.3: Robust Date Normalization
     # Raise ValueError for malformed dates to allow row rejection
