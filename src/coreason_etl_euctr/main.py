@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import argparse
+import concurrent.futures
 import io
 import os
 import sys
@@ -26,6 +27,7 @@ from coreason_etl_euctr.parser import Parser
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 from coreason_etl_euctr.storage import LocalStorageBackend, S3StorageBackend, StorageBackend
+from coreason_etl_euctr.worker import process_file_content
 
 
 def run_bronze(
@@ -221,44 +223,35 @@ def run_silver(
 
     logger.info(f"Processing {len(files_to_process)} new/modified files.")
 
-    for file_obj in files_to_process:
-        # Extract ID from filename (key)
-        # key might be "folder/123.html" or just "123.html"
-        # We assume flat or check stem.
-        file_key = file_obj.key
-        trial_id = Path(file_key).stem
-        context_logger = logger.bind(trial_id=trial_id, file_key=file_key)
+    # R.6.1.2: Parallel Parsing
+    chunk_size = 50
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        for i in range(0, len(files_to_process), chunk_size):
+            chunk = files_to_process[i : i + chunk_size]
+            future_to_key = {}
 
-        try:
-            content = storage.read(file_key)
+            # Read IO in main thread (or thread pool if we wanted, but simple iteration is safer for now)
+            for file_obj in chunk:
+                file_key = file_obj.key
+                try:
+                    content = storage.read(file_key)
+                    url_source = f"file://{file_key}"
+                    future = executor.submit(process_file_content, content, file_key, url_source)
+                    future_to_key[future] = file_key
+                except Exception as e:
+                    logger.error(f"Failed to read file {file_key}: {e}")
 
-            # Parse Trial
-            # We assume the file contains the source URL or we reconstruct it.
-            # R.4.2.3 says metadata preserved. If we injected meta tag, we could read it.
-            # For now, we'll placeholder source.
-            url_source = f"file://{file_key}"
-
-            try:
-                trial = parser.parse_trial(content, url_source=url_source)
-                # Ensure ID matches filename just in case
-                if trial.eudract_number != trial_id:
-                    context_logger.warning(f"Filename {trial_id} mismatch with content {trial.eudract_number}")
-                trials.append(trial)
-            except ValueError as e:
-                context_logger.warning(f"Failed to parse trial from {file_key}: {e}")
-                continue
-
-            # Parse Drugs
-            trial_drugs = parser.parse_drugs(content, trial_id)
-            drugs.extend(trial_drugs)
-
-            # Parse Conditions
-            trial_conds = parser.parse_conditions(content, trial_id)
-            conditions.extend(trial_conds)
-
-        except Exception as e:
-            context_logger.error(f"Error processing file {file_key}: {e}")
-            continue
+            for future in concurrent.futures.as_completed(future_to_key):
+                key = future_to_key[future]
+                try:
+                    result = future.result()
+                    if result:
+                        trial, trial_drugs, trial_conds = result
+                        trials.append(trial)
+                        drugs.extend(trial_drugs)
+                        conditions.extend(trial_conds)
+                except Exception as e:
+                    logger.error(f"Worker failed for {key}: {e}")
 
     if not trials:
         logger.warning("No valid data parsed. Skipping load.")
