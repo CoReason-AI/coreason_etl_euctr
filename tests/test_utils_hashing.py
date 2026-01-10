@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import pytest
+
 from coreason_etl_euctr.utils.hashing import compute_content_hash
 
 

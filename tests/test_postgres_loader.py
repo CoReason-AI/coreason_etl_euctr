@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import psycopg
 import pytest
+
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 

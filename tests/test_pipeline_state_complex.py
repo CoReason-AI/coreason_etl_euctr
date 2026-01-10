@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from coreason_etl_euctr.pipeline import Pipeline
 
 

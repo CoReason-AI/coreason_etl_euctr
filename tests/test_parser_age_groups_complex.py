@@ -11,6 +11,7 @@
 import unittest
 
 from bs4 import BeautifulSoup
+
 from coreason_etl_euctr.parser import Parser
 
 

@@ -11,6 +11,7 @@
 from datetime import date
 
 import pytest
+
 from coreason_etl_euctr.parser import Parser
 
 

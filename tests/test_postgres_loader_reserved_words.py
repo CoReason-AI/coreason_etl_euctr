@@ -13,6 +13,7 @@ from typing import IO, Generator, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 

@@ -11,6 +11,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+
 from coreason_etl_euctr.downloader import Downloader
 from coreason_etl_euctr.utils.hashing import compute_content_hash
 

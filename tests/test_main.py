@@ -14,9 +14,10 @@ from typing import Generator
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+from pydantic import BaseModel
+
 from coreason_etl_euctr.main import StringIteratorIO, _load_table, hello_world, run_bronze, run_silver
 from coreason_etl_euctr.storage import LocalStorageBackend
-from pydantic import BaseModel
 
 
 def test_main_run_silver_explicit_backend(tmp_path: Path) -> None:

@@ -11,8 +11,9 @@
 from datetime import date, datetime
 from typing import Optional
 
-from coreason_etl_euctr.pipeline import Pipeline
 from pydantic import BaseModel
+
+from coreason_etl_euctr.pipeline import Pipeline
 
 
 class ComplexModel(BaseModel):

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
+
 from coreason_etl_euctr.crawler import Crawler
 from coreason_etl_euctr.utils import is_retryable_error
 
