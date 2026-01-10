@@ -11,7 +11,6 @@
 from typing import IO
 
 import pytest
-
 from coreason_etl_euctr.loader import BaseLoader
 
 

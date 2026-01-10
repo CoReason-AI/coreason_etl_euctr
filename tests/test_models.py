@@ -12,9 +12,8 @@ import json
 from datetime import date, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from coreason_etl_euctr.models import EuTrial, EuTrialCondition, EuTrialDrug
+from pydantic import ValidationError
 
 
 def test_eu_trial_valid() -> None:

@@ -12,7 +12,6 @@ import io
 from unittest.mock import MagicMock
 
 import pytest
-
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 
 

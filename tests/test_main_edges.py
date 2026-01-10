@@ -13,7 +13,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from coreason_etl_euctr.main import run_bronze, run_silver
 from coreason_etl_euctr.models import EuTrial
 

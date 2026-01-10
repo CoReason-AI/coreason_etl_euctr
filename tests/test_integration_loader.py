@@ -13,11 +13,10 @@ from datetime import date
 from typing import Generator
 
 import pytest
-from testcontainers.postgres import PostgresContainer
-
 from coreason_etl_euctr.models import EuTrial, EuTrialCondition, EuTrialDrug
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
+from testcontainers.postgres import PostgresContainer
 
 
 @pytest.fixture(scope="module")  # type: ignore[misc]

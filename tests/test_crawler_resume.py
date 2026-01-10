@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-
 from coreason_etl_euctr.crawler import Crawler
 
 

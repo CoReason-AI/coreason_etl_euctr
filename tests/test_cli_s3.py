@@ -12,7 +12,6 @@ from typing import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from coreason_etl_euctr.main import main
 from coreason_etl_euctr.storage import LocalStorageBackend, S3StorageBackend
 

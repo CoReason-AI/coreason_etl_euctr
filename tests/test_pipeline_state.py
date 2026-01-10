@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Generator
 
 import pytest
-
 from coreason_etl_euctr.pipeline import Pipeline
 
 

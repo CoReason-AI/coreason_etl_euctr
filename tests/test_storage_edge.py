@@ -14,7 +14,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from botocore.exceptions import ClientError
-
 from coreason_etl_euctr.storage import LocalStorageBackend, S3StorageBackend
 
 

@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, call, patch
 
 import httpx
 import pytest
-
 from coreason_etl_euctr.downloader import Downloader
 
 

@@ -10,9 +10,8 @@
 
 from typing import List, Optional
 
-from pydantic import BaseModel
-
 from coreason_etl_euctr.pipeline import Pipeline
+from pydantic import BaseModel
 
 
 class ListModel(BaseModel):

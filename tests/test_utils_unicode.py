@@ -9,7 +9,6 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from bs4 import BeautifulSoup
-
 from coreason_etl_euctr.utils import extract_field_by_label
 
 

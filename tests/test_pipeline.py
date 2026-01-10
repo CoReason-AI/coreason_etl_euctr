@@ -12,9 +12,8 @@
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
-
 from coreason_etl_euctr.pipeline import Pipeline
+from pydantic import BaseModel
 
 
 class MockModel(BaseModel):

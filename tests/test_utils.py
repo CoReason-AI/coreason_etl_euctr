@@ -13,7 +13,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from bs4 import BeautifulSoup, NavigableString
-
 from coreason_etl_euctr.utils import clean_text, extract_field_by_label, parse_flexible_date
 
 

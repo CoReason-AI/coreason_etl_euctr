@@ -13,7 +13,6 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
-
 from coreason_etl_euctr.crawler import Crawler
 from coreason_etl_euctr.downloader import Downloader
 from coreason_etl_euctr.storage import LocalStorageBackend
