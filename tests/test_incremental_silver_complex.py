@@ -45,40 +45,56 @@ def test_incremental_windowing(tmp_path: Path) -> None:
     # Mock components
     mock_pipeline = MagicMock()
     mock_pipeline.get_silver_watermark.return_value = T0
-    # Capture calls to stage_data to verify which files were processed
     mock_pipeline.stage_data.side_effect = lambda x: iter([f"header\nrow_{id(x)}\n"])
-
-    mock_parser = MagicMock()
-
-    # Return dummy trial for any input
-    def side_effect_parse(content: str, url_source: str) -> EuTrial:
-        return EuTrial(eudract_number=Path(url_source.replace("file://", "")).stem, url_source=url_source)
-
-    mock_parser.parse_trial.side_effect = side_effect_parse
-    mock_parser.parse_drugs.return_value = []
-    mock_parser.parse_conditions.return_value = []
 
     mock_loader = MagicMock()
 
-    # Run with mocked time.time() = T0 + 50
-    # Window is (1000, 1050].
-    # Old (1000): Skipped (<= 1000).
-    # New (1010): Processed.
-    # Future (1100): Skipped (> 1050).
+    # We mock ProcessPoolExecutor and verify what it is called with or what results it returns.
+    # Actually, the windowing logic happens BEFORE submission to executor.
+    # So we can just inspect what files were read/submitted.
+    # But `run_silver` does loop over chunks.
 
-    with patch("time.time", return_value=T0 + 50):
-        run_silver(input_dir=str(d), parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
 
-    # Verify Logic
-    processed_sources = []
-    for call_args in mock_parser.parse_trial.call_args_list:
-        processed_sources.append(call_args.kwargs["url_source"])
+        # When submit is called, we can inspect args
+        # We need to return valid future so logic proceeds
+        mock_future = MagicMock()
+        mock_future.result.return_value = (EuTrial(eudract_number="new", url_source="s"), [], [])
+        executor_instance.submit.return_value = mock_future
+        mock_as_completed.return_value = [mock_future]
 
-    processed_filenames = [Path(s.replace("file://", "")).name for s in processed_sources]
+        # Run with mocked time.time() = T0 + 50
+        # Window is (1000, 1050].
+        # Old (1000): Skipped (<= 1000).
+        # New (1010): Processed.
+        # Future (1100): Skipped (> 1050).
 
-    assert "old.html" not in processed_filenames
-    assert "new.html" in processed_filenames
-    assert "future.html" not in processed_filenames
+        with patch("time.time", return_value=T0 + 50):
+            run_silver(input_dir=str(d), pipeline=mock_pipeline, loader=mock_loader)
+
+        # Verify Logic via submit calls
+        # submit(process_file_content, content, key, source)
+
+        # We expect only "new.html" to be submitted.
+        # old.html (mtime=T0) <= T0 (watermark) -> Skip
+        # future.html (mtime=T0+100) > T0+50 (start time) -> Skip
+
+        assert executor_instance.submit.call_count == 1
+        call_args = executor_instance.submit.call_args
+        # args[1] is file_key (if we follow order: func, content, key, source)
+        # process_file_content signature: (content, file_key, url_source)
+        # submit(func, *args)
+        # args[0] is process_file_content
+        # args[1] is content
+        # args[2] is file_key
+
+        file_key = call_args[0][2]
+        assert file_key == "new.html"
 
     # Verify Watermark Update
     mock_pipeline.set_silver_watermark.assert_called_once_with(T0 + 50)
@@ -99,14 +115,20 @@ def test_incremental_rollback(tmp_path: Path) -> None:
     mock_loader = MagicMock()
     mock_loader.bulk_load_stream.side_effect = Exception("DB Error")
 
-    # Mock Parser to succeed
-    mock_parser = MagicMock()
-    mock_parser.parse_trial.return_value = EuTrial(eudract_number="123", url_source="s")
-    mock_parser.parse_drugs.return_value = []
-    mock_parser.parse_conditions.return_value = []
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
 
-    # Run
-    run_silver(input_dir=str(d), pipeline=mock_pipeline, loader=mock_loader, parser=mock_parser)
+        mock_future = MagicMock()
+        mock_future.result.return_value = (EuTrial(eudract_number="123", url_source="s"), [], [])
+        executor_instance.submit.return_value = mock_future
+        mock_as_completed.return_value = [mock_future]
+
+        # Run
+        run_silver(input_dir=str(d), pipeline=mock_pipeline, loader=mock_loader)
 
     # Verify Watermark NOT updated
     mock_pipeline.set_silver_watermark.assert_not_called()
