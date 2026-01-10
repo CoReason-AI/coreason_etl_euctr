@@ -145,9 +145,10 @@ def test_orchestration_aggregation_diverse() -> None:
     ]
     mock_storage.read.return_value = "content"
 
-    with patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor, \
-         patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed:
-
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
         executor_instance = MockExecutor.return_value
         executor_instance.__enter__.return_value = executor_instance
 
