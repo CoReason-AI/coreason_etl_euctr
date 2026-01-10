@@ -214,7 +214,7 @@ def test_run_bronze_handles_crawl_exception(tmp_path: Path) -> None:
     # If harvest_ids crashes entirely (unhandled), run_bronze crashes (which is expected).
     # But let's assume harvest_ids yielded 'ID1' before crashing or finishing.
 
-    def gen() -> Generator[tuple[int, list[str]], None, None]:
+    def gen() -> Generator[Tuple[int, List[str]], None, None]:
         yield (1, ["ID1"])
         # Simulate clean exit or continued yield after handled internal error
         # If we raise here, run_bronze loop will crash unless wrapped.

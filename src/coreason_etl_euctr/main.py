@@ -15,7 +15,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Iterator, List, Optional, Sequence, Tuple
+from typing import Iterator, List, Optional, Sequence
 
 from pydantic import BaseModel
 
@@ -23,11 +23,11 @@ from coreason_etl_euctr.crawler import Crawler
 from coreason_etl_euctr.downloader import Downloader
 from coreason_etl_euctr.loader import BaseLoader
 from coreason_etl_euctr.logger import logger
-from coreason_etl_euctr.models import EuTrial, EuTrialCondition, EuTrialDrug
 from coreason_etl_euctr.parser import Parser
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
 from coreason_etl_euctr.storage import LocalStorageBackend, S3StorageBackend, StorageBackend
+from coreason_etl_euctr.worker import process_file_content
 
 
 def run_bronze(
@@ -353,40 +353,6 @@ def _load_table(
         if not conflict_keys:
             raise ValueError(f"Conflict keys required for UPSERT on {table_name}")
         loader.upsert_stream(stream, table_name, conflict_keys=conflict_keys)  # type: ignore[arg-type]
-
-
-def process_file_content(
-    content: str, file_key: str, url_source: str
-) -> Optional[Tuple[EuTrial, List[EuTrialDrug], List[EuTrialCondition]]]:
-    """
-    Process a single file content: Parse Trial, Drugs, and Conditions.
-    Designed to be run in a separate process (must be picklable).
-    """
-    # Instantiate parser locally to avoid pickling external state if not needed,
-    # or rely on it being stateless.
-    parser = Parser()
-
-    trial_id = Path(file_key).stem
-    # Use a local logger bound to context, but loguru handles multiprocessing well.
-    context_logger = logger.bind(trial_id=trial_id, file_key=file_key)
-
-    try:
-        try:
-            trial = parser.parse_trial(content, url_source=url_source)
-            if trial.eudract_number != trial_id:
-                context_logger.warning(f"Filename {trial_id} mismatch with content {trial.eudract_number}")
-        except ValueError as e:
-            context_logger.warning(f"Failed to parse trial from {file_key}: {e}")
-            return None
-
-        trial_drugs = parser.parse_drugs(content, trial_id)
-        trial_conds = parser.parse_conditions(content, trial_id)
-
-        return (trial, trial_drugs, trial_conds)
-
-    except Exception as e:
-        context_logger.error(f"Error processing file {file_key}: {e}")
-        return None
 
 
 def hello_world() -> str:

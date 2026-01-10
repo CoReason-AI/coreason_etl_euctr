@@ -10,8 +10,9 @@
 
 from unittest.mock import MagicMock, patch
 
-from coreason_etl_euctr.main import process_file_content, run_silver
+from coreason_etl_euctr.main import run_silver
 from coreason_etl_euctr.storage import StorageObject
+from coreason_etl_euctr.worker import process_file_content
 
 
 def test_process_file_content_valid() -> None:
@@ -52,15 +53,40 @@ def test_process_file_content_invalid_id() -> None:
     key = "2020-123456-78.html"  # Mismatch
     source = "file://..."
 
-    # It should log warning but might return the trial anyway if we only warn?
-    # In my implementation:
-    # if trial.eudract_number != trial_id: logger.warning(...)
-    # It returns the trial.
+    # We expect a warning log. Patch logger to verify.
+    with patch("coreason_etl_euctr.worker.logger") as mock_logger:
+        # Bind returns a new logger proxy, so we need to mock the result of bind too
+        # logger.bind(...) returns context_logger
+        # context_logger.warning(...)
 
-    result = process_file_content(content, key, source)
-    assert result is not None
-    trial, _, _ = result
-    assert trial.eudract_number == "2020-999999-99"
+        mock_context_logger = MagicMock()
+        mock_logger.bind.return_value = mock_context_logger
+
+        result = process_file_content(content, key, source)
+
+        assert result is not None
+        trial, _, _ = result
+        assert trial.eudract_number == "2020-999999-99"
+
+        # Verify warning call
+        mock_context_logger.warning.assert_called()
+        args = mock_context_logger.warning.call_args[0]
+        assert "mismatch" in args[0]
+
+
+def test_process_file_content_generic_error() -> None:
+    """Test generic exception handling."""
+    content = "<html>Content</html>"
+    key = "2020-123456-78.html"
+    source = "file://..."
+
+    # Patch Parser to raise generic Exception
+    with patch("coreason_etl_euctr.worker.Parser") as MockParser:
+        mock_instance = MockParser.return_value
+        mock_instance.parse_trial.side_effect = Exception("Boom")
+
+        result = process_file_content(content, key, source)
+        assert result is None
 
 
 def test_process_file_content_parse_error() -> None:
