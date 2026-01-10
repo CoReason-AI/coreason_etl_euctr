@@ -33,43 +33,46 @@ def test_run_silver_mixed_results(tmp_path: Path) -> None:
     (d / "fail.html").write_text("bad")
     (d / "success2.html").write_text("ok")
 
-    mock_parser = MagicMock()
-    # success1 -> OK, fail -> Error, success2 -> OK
-    mock_parser.parse_trial.side_effect = [
-        EuTrial(eudract_number="success1", url_source="s"),
-        ValueError("Parse Error"),
-        EuTrial(eudract_number="success2", url_source="s"),
-    ]
-    mock_parser.parse_drugs.return_value = []
-    mock_parser.parse_conditions.return_value = []
-
     mock_loader = MagicMock()
-
-    run_silver(input_dir=str(d), parser=mock_parser, loader=mock_loader)
-
-    # Ensure loader was called
-    assert mock_loader.bulk_load_stream.called
-
-    # Let's mock pipeline too to verify inputs
     mock_pipeline = MagicMock()
     mock_pipeline.get_silver_watermark.return_value = None
     mock_pipeline.stage_data.return_value = iter(["header", "row"])
 
-    # Reset parser side_effect for the second run
-    mock_parser.parse_trial.side_effect = [
-        EuTrial(eudract_number="success1", url_source="s"),
-        ValueError("Parse Error"),
-        EuTrial(eudract_number="success2", url_source="s"),
-    ]
+    # We mock ProcessPoolExecutor to return mixed results
 
-    run_silver(input_dir=str(d), parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        # We construct 3 futures
+        f1 = MagicMock()
+        f1.result.return_value = (EuTrial(eudract_number="success1", url_source="s"), [], [])
+
+        f2 = MagicMock()
+        f2.result.side_effect = ValueError("Parse Error (simulated in result retrieval or worker)")
+        # Actually run_silver catches Exception from future.result() and logs error.
+
+        f3 = MagicMock()
+        f3.result.return_value = (EuTrial(eudract_number="success2", url_source="s"), [], [])
+
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
+
+        # When submit is called, return a future. We map them sequentially.
+        executor_instance.submit.side_effect = [f1, f2, f3]
+        mock_as_completed.return_value = [f1, f2, f3]
+
+        run_silver(input_dir=str(d), pipeline=mock_pipeline, loader=mock_loader)
 
     # Verify pipeline.stage_data was called with a list of 2 trials
+    # (Because f2 failed)
     args, _ = mock_pipeline.stage_data.call_args
     data_arg = args[0]
     assert len(data_arg) == 2
-    assert data_arg[0].eudract_number == "success1"
-    assert data_arg[1].eudract_number == "success2"
+    # Order depends on list order, we just check existence
+    ids = {t.eudract_number for t in data_arg}
+    assert "success1" in ids
+    assert "success2" in ids
 
 
 def test_run_silver_large_number_of_files(tmp_path: Path) -> None:
@@ -79,25 +82,37 @@ def test_run_silver_large_number_of_files(tmp_path: Path) -> None:
     d = tmp_path / "bronze"
     d.mkdir()
 
-    # Create 50 files
-    for i in range(50):
+    count = 50
+    for i in range(count):
         (d / f"{i}.html").write_text("content")
-
-    mock_parser = MagicMock()
-    mock_parser.parse_trial.side_effect = [EuTrial(eudract_number=str(i), url_source="s") for i in range(50)]
-    mock_parser.parse_drugs.return_value = []
-    mock_parser.parse_conditions.return_value = []
 
     mock_loader = MagicMock()
     mock_pipeline = MagicMock()
     mock_pipeline.get_silver_watermark.return_value = None
     mock_pipeline.stage_data.return_value = iter(["header"])
 
-    run_silver(input_dir=str(d), parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
+
+        futures = []
+        for i in range(count):
+            f = MagicMock()
+            f.result.return_value = (EuTrial(eudract_number=str(i), url_source="s"), [], [])
+            futures.append(f)
+
+        executor_instance.submit.side_effect = futures
+        # as_completed should yield all of them
+        mock_as_completed.return_value = futures
+
+        run_silver(input_dir=str(d), pipeline=mock_pipeline, loader=mock_loader)
 
     # Verify all 50 were collected
     args, _ = mock_pipeline.stage_data.call_args
-    assert len(args[0]) == 50
+    assert len(args[0]) == count
 
 
 def test_run_bronze_mkdir_failure(tmp_path: Path) -> None:
@@ -171,27 +186,26 @@ def test_run_silver_storage_read_error(tmp_path: Path) -> None:
 
     backend.read.side_effect = read_side_effect
 
-    mock_parser = MagicMock()
-    mock_parser.parse_trial.return_value = EuTrial(eudract_number="123", url_source="s")
-    mock_parser.parse_drugs.return_value = []
-    mock_parser.parse_conditions.return_value = []
-
     mock_loader = MagicMock()
-
-    # We must patch Pipeline watermark to ensure files are processed
-    # Or just rely on default pipeline mock in run_silver if passed?
-    # run_silver instantiates Pipeline() if None.
-    # We should inject it.
     mock_pipeline = MagicMock()
     mock_pipeline.get_silver_watermark.return_value = None
     mock_pipeline.stage_data.return_value = iter(["header"])
 
-    run_silver(
-        input_dir="dummy", storage_backend=backend, parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader
-    )
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
 
-    # Should have processed 'good.html' (parsed 1 trial)
-    # 'bad.html' should have been logged and skipped
+        # Only 'good.html' gets submitted because 'bad.html' fails reading
+        f1 = MagicMock()
+        f1.result.return_value = (EuTrial(eudract_number="123", url_source="s"), [], [])
+
+        executor_instance.submit.return_value = f1
+        mock_as_completed.return_value = [f1]
+
+        run_silver(input_dir="dummy", storage_backend=backend, pipeline=mock_pipeline, loader=mock_loader)
 
     # Verify stage_data called with 1 item
     args, _ = mock_pipeline.stage_data.call_args

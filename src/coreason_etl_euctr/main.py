@@ -9,12 +9,13 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import argparse
+import concurrent.futures
 import io
 import os
 import sys
 import time
 from pathlib import Path
-from typing import Iterator, List, Optional, Sequence
+from typing import Iterator, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel
 
@@ -22,6 +23,7 @@ from coreason_etl_euctr.crawler import Crawler
 from coreason_etl_euctr.downloader import Downloader
 from coreason_etl_euctr.loader import BaseLoader
 from coreason_etl_euctr.logger import logger
+from coreason_etl_euctr.models import EuTrial, EuTrialCondition, EuTrialDrug
 from coreason_etl_euctr.parser import Parser
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
@@ -221,44 +223,35 @@ def run_silver(
 
     logger.info(f"Processing {len(files_to_process)} new/modified files.")
 
-    for file_obj in files_to_process:
-        # Extract ID from filename (key)
-        # key might be "folder/123.html" or just "123.html"
-        # We assume flat or check stem.
-        file_key = file_obj.key
-        trial_id = Path(file_key).stem
-        context_logger = logger.bind(trial_id=trial_id, file_key=file_key)
+    # R.6.1.2: Parallel Parsing
+    chunk_size = 50
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        for i in range(0, len(files_to_process), chunk_size):
+            chunk = files_to_process[i : i + chunk_size]
+            future_to_key = {}
 
-        try:
-            content = storage.read(file_key)
+            # Read IO in main thread (or thread pool if we wanted, but simple iteration is safer for now)
+            for file_obj in chunk:
+                file_key = file_obj.key
+                try:
+                    content = storage.read(file_key)
+                    url_source = f"file://{file_key}"
+                    future = executor.submit(process_file_content, content, file_key, url_source)
+                    future_to_key[future] = file_key
+                except Exception as e:
+                    logger.error(f"Failed to read file {file_key}: {e}")
 
-            # Parse Trial
-            # We assume the file contains the source URL or we reconstruct it.
-            # R.4.2.3 says metadata preserved. If we injected meta tag, we could read it.
-            # For now, we'll placeholder source.
-            url_source = f"file://{file_key}"
-
-            try:
-                trial = parser.parse_trial(content, url_source=url_source)
-                # Ensure ID matches filename just in case
-                if trial.eudract_number != trial_id:
-                    context_logger.warning(f"Filename {trial_id} mismatch with content {trial.eudract_number}")
-                trials.append(trial)
-            except ValueError as e:
-                context_logger.warning(f"Failed to parse trial from {file_key}: {e}")
-                continue
-
-            # Parse Drugs
-            trial_drugs = parser.parse_drugs(content, trial_id)
-            drugs.extend(trial_drugs)
-
-            # Parse Conditions
-            trial_conds = parser.parse_conditions(content, trial_id)
-            conditions.extend(trial_conds)
-
-        except Exception as e:
-            context_logger.error(f"Error processing file {file_key}: {e}")
-            continue
+            for future in concurrent.futures.as_completed(future_to_key):
+                key = future_to_key[future]
+                try:
+                    result = future.result()
+                    if result:
+                        trial, trial_drugs, trial_conds = result
+                        trials.append(trial)
+                        drugs.extend(trial_drugs)
+                        conditions.extend(trial_conds)
+                except Exception as e:
+                    logger.error(f"Worker failed for {key}: {e}")
 
     if not trials:
         logger.warning("No valid data parsed. Skipping load.")
@@ -360,6 +353,40 @@ def _load_table(
         if not conflict_keys:
             raise ValueError(f"Conflict keys required for UPSERT on {table_name}")
         loader.upsert_stream(stream, table_name, conflict_keys=conflict_keys)  # type: ignore[arg-type]
+
+
+def process_file_content(
+    content: str, file_key: str, url_source: str
+) -> Optional[Tuple[EuTrial, List[EuTrialDrug], List[EuTrialCondition]]]:
+    """
+    Process a single file content: Parse Trial, Drugs, and Conditions.
+    Designed to be run in a separate process (must be picklable).
+    """
+    # Instantiate parser locally to avoid pickling external state if not needed,
+    # or rely on it being stateless.
+    parser = Parser()
+
+    trial_id = Path(file_key).stem
+    # Use a local logger bound to context, but loguru handles multiprocessing well.
+    context_logger = logger.bind(trial_id=trial_id, file_key=file_key)
+
+    try:
+        try:
+            trial = parser.parse_trial(content, url_source=url_source)
+            if trial.eudract_number != trial_id:
+                context_logger.warning(f"Filename {trial_id} mismatch with content {trial.eudract_number}")
+        except ValueError as e:
+            context_logger.warning(f"Failed to parse trial from {file_key}: {e}")
+            return None
+
+        trial_drugs = parser.parse_drugs(content, trial_id)
+        trial_conds = parser.parse_conditions(content, trial_id)
+
+        return (trial, trial_drugs, trial_conds)
+
+    except Exception as e:
+        context_logger.error(f"Error processing file {file_key}: {e}")
+        return None
 
 
 def hello_world() -> str:

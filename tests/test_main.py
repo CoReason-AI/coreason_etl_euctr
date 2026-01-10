@@ -10,11 +10,12 @@
 
 from datetime import date
 from pathlib import Path
-from typing import Generator
+from typing import Generator, List, Tuple
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 from coreason_etl_euctr.main import StringIteratorIO, _load_table, hello_world, run_bronze, run_silver
+from coreason_etl_euctr.models import EuTrialCondition, EuTrialDrug
 from coreason_etl_euctr.storage import LocalStorageBackend
 from pydantic import BaseModel
 
@@ -261,35 +262,33 @@ class MockTrial(BaseModel):
 
 def test_run_silver_full_load(tmp_path: Path) -> None:
     """Test the parsing and FULL loading flow of run_silver."""
-    # Create dummy bronze files
     d = tmp_path / "bronze"
     d.mkdir()
     p1 = d / "2015-001.html"
     p1.write_text("<html>Content 1</html>")
 
-    mock_parser = MagicMock()
     mock_pipeline = MagicMock()
     mock_loader = MagicMock()
-
-    # Setup Parser returns
-    trial_obj = MockTrial(eudract_number="2015-001")
-    mock_parser.parse_trial.return_value = trial_obj
-    mock_parser.parse_drugs.return_value = []
-    mock_parser.parse_conditions.return_value = []
-
-    # Setup Pipeline returns
     mock_pipeline.stage_data.return_value = iter(["header\n", "row1\n"])
-    mock_pipeline.get_silver_watermark.return_value = None  # New logic
+    mock_pipeline.get_silver_watermark.return_value = None
 
-    run_silver(input_dir=str(d), mode="FULL", parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
+    trial_obj = MockTrial(eudract_number="2015-001")
+    result_tuple: Tuple[MockTrial, List[EuTrialDrug], List[EuTrialCondition]] = (trial_obj, [], [])
 
-    # Verify Loader calls
-    mock_loader.connect.assert_called_once()
-    mock_loader.prepare_schema.assert_called_once()
-    # FULL mode means truncate + bulk_load
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
+        mock_future = MagicMock()
+        mock_future.result.return_value = result_tuple
+        executor_instance.submit.return_value = mock_future
+        mock_as_completed.return_value = [mock_future]
+
+        run_silver(input_dir=str(d), mode="FULL", pipeline=mock_pipeline, loader=mock_loader)
+
     mock_loader.truncate_tables.assert_called_once_with(["eu_trials"])
-    # load_table calls bulk_load_stream.
-    # Since drugs/conditions are empty, only trials should trigger load
     assert mock_loader.bulk_load_stream.call_count == 1
     mock_loader.commit.assert_called_once()
     mock_loader.close.assert_called_once()
@@ -302,22 +301,28 @@ def test_run_silver_upsert_load(tmp_path: Path) -> None:
     p1 = d / "2015-001.html"
     p1.write_text("content")
 
-    mock_parser = MagicMock()
-    trial_obj = MockTrial(eudract_number="2015-001")
-    mock_parser.parse_trial.return_value = trial_obj
-    mock_parser.parse_drugs.return_value = []
-    mock_parser.parse_conditions.return_value = []
-
     mock_pipeline = MagicMock()
-    mock_pipeline.stage_data.return_value = iter(["header\n", "row1\n"])
-    mock_pipeline.get_silver_watermark.return_value = None  # New logic
     mock_loader = MagicMock()
+    mock_pipeline.stage_data.return_value = iter(["header\n", "row1\n"])
+    mock_pipeline.get_silver_watermark.return_value = None
 
-    run_silver(input_dir=str(d), mode="UPSERT", parser=mock_parser, pipeline=mock_pipeline, loader=mock_loader)
+    trial_obj = MockTrial(eudract_number="2015-001")
+    result_tuple: Tuple[MockTrial, List[EuTrialDrug], List[EuTrialCondition]] = (trial_obj, [], [])
 
-    # Truncate should NOT be called
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
+        mock_future = MagicMock()
+        mock_future.result.return_value = result_tuple
+        executor_instance.submit.return_value = mock_future
+        mock_as_completed.return_value = [mock_future]
+
+        run_silver(input_dir=str(d), mode="UPSERT", pipeline=mock_pipeline, loader=mock_loader)
+
     mock_loader.truncate_tables.assert_not_called()
-    # upsert_stream should be called
     mock_loader.upsert_stream.assert_called()
 
 
@@ -328,44 +333,54 @@ def test_run_silver_invalid_mode() -> None:
 
 
 def test_run_silver_id_mismatch(tmp_path: Path) -> None:
-    """Test warning when filename mismatch ID."""
+    """Test logic proceeds even if warning (simulated by valid result)."""
     d = tmp_path / "bronze"
     d.mkdir()
-    p1 = d / "2015-999.html"  # ID in filename is 2015-999
+    p1 = d / "2015-999.html"
     p1.write_text("<html>Content</html>")
 
-    mock_parser = MagicMock()
-    # ID in content is 2015-001
-    trial_obj = MockTrial(eudract_number="2015-001")
-    mock_parser.parse_trial.return_value = trial_obj
-    mock_parser.parse_drugs.return_value = []
-    mock_parser.parse_conditions.return_value = []
-
     mock_loader = MagicMock()
+    trial_obj = MockTrial(eudract_number="2015-001")
+    result_tuple: Tuple[MockTrial, List[EuTrialDrug], List[EuTrialCondition]] = (trial_obj, [], [])
 
-    run_silver(input_dir=str(d), parser=mock_parser, loader=mock_loader)
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
+        mock_future = MagicMock()
+        mock_future.result.return_value = result_tuple
+        executor_instance.submit.return_value = mock_future
+        mock_as_completed.return_value = [mock_future]
 
-    # Logic should proceed but log warning.
+        run_silver(input_dir=str(d), loader=mock_loader)
+
     mock_loader.bulk_load_stream.assert_called()
 
 
-def test_run_silver_parse_exception(tmp_path: Path) -> None:
-    """Test exception during generic processing of file (e.g. read error or other)."""
-    # This covers the broad 'except Exception as e' loop in file processing
+def test_run_silver_worker_fails(tmp_path: Path) -> None:
+    """Test exception from worker (future.result() raises)."""
     d = tmp_path / "bronze"
     d.mkdir()
     p1 = d / "2015-001.html"
     p1.write_text("content")
 
-    mock_parser = MagicMock()
-    # parse_trial raises generic Exception (not ValueError)
-    mock_parser.parse_trial.side_effect = Exception("Surprise!")
-
     mock_loader = MagicMock()
 
-    run_silver(input_dir=str(d), parser=mock_parser, loader=mock_loader)
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
+        mock_future = MagicMock()
+        mock_future.result.side_effect = Exception("Worker Crash")
+        executor_instance.submit.return_value = mock_future
+        mock_as_completed.return_value = [mock_future]
 
-    # Should continue loop (skip file) and thus no trials loaded
+        run_silver(input_dir=str(d), loader=mock_loader)
+
     mock_loader.bulk_load_stream.assert_not_called()
 
 
@@ -383,17 +398,26 @@ def test_run_silver_no_input_dir(tmp_path: Path) -> None:
 
 
 def test_run_silver_no_valid_data(tmp_path: Path) -> None:
-    """Test skipping load if no valid data parsed."""
+    """Test skipping load if no valid data parsed (worker returns None)."""
     d = tmp_path / "bronze"
     d.mkdir()
     p1 = d / "bad.html"
     p1.write_text("bad content")
 
-    mock_parser = MagicMock()
-    mock_parser.parse_trial.side_effect = ValueError("Parse error")
     mock_loader = MagicMock()
 
-    run_silver(input_dir=str(d), parser=mock_parser, loader=mock_loader)
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
+        mock_future = MagicMock()
+        mock_future.result.return_value = None
+        executor_instance.submit.return_value = mock_future
+        mock_as_completed.return_value = [mock_future]
+
+        run_silver(input_dir=str(d), loader=mock_loader)
 
     mock_loader.connect.assert_not_called()
 
@@ -405,16 +429,24 @@ def test_run_silver_db_error(tmp_path: Path) -> None:
     p1 = d / "2015-001.html"
     p1.write_text("<html>Content</html>")
 
-    mock_parser = MagicMock()
-    trial_obj = MockTrial(eudract_number="2015-001")
-    mock_parser.parse_trial.return_value = trial_obj
-    mock_parser.parse_drugs.return_value = []
-    mock_parser.parse_conditions.return_value = []
-
     mock_loader = MagicMock()
     mock_loader.bulk_load_stream.side_effect = Exception("DB Error")
 
-    run_silver(input_dir=str(d), parser=mock_parser, loader=mock_loader)
+    trial_obj = MockTrial(eudract_number="2015-001")
+    result_tuple: Tuple[MockTrial, List[EuTrialDrug], List[EuTrialCondition]] = (trial_obj, [], [])
+
+    with (
+        patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,
+        patch("coreason_etl_euctr.main.concurrent.futures.as_completed") as mock_as_completed,
+    ):
+        executor_instance = MockExecutor.return_value
+        executor_instance.__enter__.return_value = executor_instance
+        mock_future = MagicMock()
+        mock_future.result.return_value = result_tuple
+        executor_instance.submit.return_value = mock_future
+        mock_as_completed.return_value = [mock_future]
+
+        run_silver(input_dir=str(d), loader=mock_loader)
 
     mock_loader.rollback.assert_called_once()
     mock_loader.close.assert_called_once()
