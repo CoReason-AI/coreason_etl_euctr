@@ -305,9 +305,27 @@ class BigQueryLoader(BaseLoader):
             cols_str = ", ".join(schema_fields)
             insert_vals = ", ".join(f"S.{col}" for col in schema_fields)
 
+            # Deduplicate source data in staging to avoid MERGE failures on duplicate keys.
+            # We pick the row with the latest last_updated timestamp (or arbitrary if missing/same).
+            # Assuming last_updated exists, otherwise use arbitrary choice.
+            partition_by = ", ".join(conflict_keys)
+
+            # Check if last_updated exists in schema to use for ordering
+            has_last_updated = "last_updated" in schema_fields
+            order_by = (
+                "last_updated DESC" if has_last_updated else partition_by
+            )  # Fallback to key (arbitrary stable sort)
+
+            source_query = f"""
+                (
+                    SELECT * FROM `{self.project_id}.{self.dataset_id}.{staging_table_id}`
+                    QUALIFY ROW_NUMBER() OVER (PARTITION BY {partition_by} ORDER BY {order_by}) = 1
+                )
+            """
+
             merge_sql = f"""
                 MERGE `{self.project_id}.{self.dataset_id}.{target_table}` T
-                USING `{self.project_id}.{self.dataset_id}.{staging_table_id}` S
+                USING {source_query} S
                 ON {on_clause}
                 WHEN MATCHED THEN
                   UPDATE SET {update_set}
