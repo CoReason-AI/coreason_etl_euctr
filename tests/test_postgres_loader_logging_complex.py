@@ -83,7 +83,7 @@ def test_upsert_do_nothing_action(caplog_loguru: pytest.LogCaptureFixture) -> No
     # We can check call args if we want, but main goal here is logging.
     calls = mock_cursor.execute.call_args_list
     # The last execute before drop should be the INSERT
-    insert_call = calls[-2] # Last is DROP, second last is INSERT
+    insert_call = calls[-2]  # Last is DROP, second last is INSERT
     sql = insert_call[0][0]
     assert "DO NOTHING" in sql
 
