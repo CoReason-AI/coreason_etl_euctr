@@ -200,7 +200,11 @@ class Crawler:
         date_labels = ["Date of Competent Authority Decision", "Date record first entered"]
 
         for label_text in date_labels:
-            target = container.find(string=lambda text: label_text in normalize_func(text) if text else False)  # noqa: B023
+
+            def is_date_label(text: str, label_text: str = label_text) -> bool:
+                return label_text in normalize_func(text) if text else False
+
+            target = container.find(string=is_date_label)
             if target:
                 # Value is likely next sibling or parent's next sibling
                 parent = target.parent

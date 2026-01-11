@@ -111,7 +111,7 @@ class S3StorageBackend(StorageBackend):
     """
 
     def __init__(self, bucket_name: str, prefix: str = "", region_name: Optional[str] = None):
-        if boto3 is None:
+        if boto3 is None:  # pragma: no cover
             raise ImportError("boto3 is required for S3StorageBackend")
 
         self.bucket_name = bucket_name
