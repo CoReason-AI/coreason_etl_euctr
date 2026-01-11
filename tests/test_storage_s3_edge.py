@@ -9,8 +9,8 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import datetime
-from unittest.mock import MagicMock, patch
 from typing import Generator
+from unittest.mock import MagicMock, patch
 
 import pytest
 from coreason_etl_euctr.storage import S3StorageBackend

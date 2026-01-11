@@ -127,7 +127,8 @@ class Crawler:
 
         # The search result structure typically wraps each trial in a table or div.
         # We need to find the container to associate the ID with its date.
-        # Assuming typical structure: <table> ... <tr><td>EudraCT Number: ...</td> ... <td>Date ...: ...</td></tr> ... </table>
+        # Assuming typical structure:
+        # <table> ... <tr><td>EudraCT Number: ...</td> ... <td>Date ...: ...</td></tr> ... </table>
         # Or <div class="result"> ... </div>
 
         # Strategy: Find "EudraCT Number:" labels, then look for date within the same container.
@@ -135,9 +136,10 @@ class Crawler:
         def normalize(t: str) -> str:
             return unicodedata.normalize("NFKC", t)
 
-        labels = soup.find_all(
-            string=lambda text: "EudraCT Number:" in normalize(text) if text else False  # noqa: B023
-        )
+        def is_eudract_label(text: str) -> bool:
+            return "EudraCT Number:" in normalize(text) if text else False
+
+        labels = soup.find_all(string=is_eudract_label)
 
         for label in labels:
             if isinstance(label, Comment):
