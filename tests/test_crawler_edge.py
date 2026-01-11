@@ -8,6 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+from unittest.mock import MagicMock, patch
+
 from coreason_etl_euctr.crawler import Crawler
 
 
@@ -55,3 +57,74 @@ def test_crawler_lambda_edge() -> None:
     # Empty text node
     html2 = "<div> </div>"
     crawler.extract_ids(html2)
+
+
+def test_crawler_date_container_whitespace() -> None:
+    """
+    Test extraction of date where there is significant whitespace/siblings between label and value.
+    Covers the 'while next_node ...' loop in _extract_date_from_container.
+    """
+    crawler = Crawler()
+    html = """
+    <table>
+        <tr>
+            <td>EudraCT Number:</td><td>2023-999</td>
+        </tr>
+        <tr>
+            <td>Date record first entered:</td>
+            <!-- Comment in between -->
+
+            <td>2023-12-31</td>
+        </tr>
+    </table>
+    """
+    ids = crawler.extract_ids(html)
+    assert len(ids) == 1
+    assert ids[0][0] == "2023-999"
+    assert str(ids[0][1]) == "2023-12-31"
+
+
+def test_crawler_date_same_node() -> None:
+    """Test date extraction when date is in the same text node as label."""
+    crawler = Crawler()
+    # Ensure container class="result" so it is found
+    html = """
+    <div class="result">
+        <div>EudraCT Number: 2023-888</div>
+        <div>Date record first entered: 2023-11-11</div>
+    </div>
+    """
+    ids = crawler.extract_ids(html)
+    assert len(ids) == 1
+    assert ids[0][0] == "2023-888"
+    assert str(ids[0][1]) == "2023-11-11"
+
+
+def test_crawler_date_label_orphaned() -> None:
+    """Test coverage for date label without parent."""
+    crawler = Crawler()
+
+    # We mock BeautifulSoup to return a NavigableString with no parent
+    with patch("coreason_etl_euctr.crawler.BeautifulSoup") as MockSoup:
+        mock_soup = MagicMock()
+        MockSoup.return_value = mock_soup
+
+        # We need to mock find_all to return ID label (so we enter loop)
+        mock_id_label = MagicMock()  # No spec
+        mock_id_label.parent.get_text.return_value = "EudraCT Number: 123"
+        mock_id_label.parent.find_parent.return_value = MagicMock()  # Container
+
+        # Mock container find to return date label
+        mock_container = mock_id_label.parent.find_parent.return_value
+
+        mock_date_label = MagicMock()
+        mock_date_label.parent = None  # ORPHANED
+
+        # The logic does: target = container.find(...)
+        mock_container.find.return_value = mock_date_label
+
+        mock_soup.find_all.return_value = [mock_id_label]
+
+        # Run
+        crawler.extract_ids("<html></html>")
+        # Should not crash, date should be None

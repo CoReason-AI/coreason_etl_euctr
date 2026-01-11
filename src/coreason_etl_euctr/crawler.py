@@ -14,7 +14,7 @@ from datetime import date
 from typing import Callable, Generator, List, Optional, Tuple
 
 import httpx
-from bs4 import BeautifulSoup, Comment, Tag
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from coreason_etl_euctr.logger import logger
@@ -213,8 +213,14 @@ class Crawler:
 
                 # Try finding value in next sibling
                 next_node = parent.next_sibling
-                while next_node and (isinstance(next_node, str) and not next_node.strip()):
-                    next_node = next_node.next_sibling
+                while next_node:
+                    if isinstance(next_node, Comment):
+                        next_node = next_node.next_sibling
+                        continue
+                    if isinstance(next_node, NavigableString) and not next_node.strip():
+                        next_node = next_node.next_sibling
+                        continue
+                    break
 
                 val_text = ""
                 if next_node:
