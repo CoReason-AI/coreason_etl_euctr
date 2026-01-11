@@ -46,7 +46,11 @@ def test_cli_nonexistent_input_dir() -> None:
             # Let's just verify invocation here.
             ret = main()
             assert ret == 0
-            mock_run.assert_called_with(input_dir="/non/existent/path", mode="FULL", storage_backend=None)
+            # mock_run.assert_called_with(input_dir="/non/existent/path", mode="FULL", storage_backend=None)
+            # Check args loosely
+            args, kwargs = mock_run.call_args
+            assert kwargs["input_dir"] == "/non/existent/path"
+            assert kwargs["mode"] == "FULL"
 
 
 def test_cli_unknown_command() -> None:

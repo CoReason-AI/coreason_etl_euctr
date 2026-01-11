@@ -27,6 +27,7 @@ from coreason_etl_euctr.logger import logger
 from coreason_etl_euctr.parser import Parser
 from coreason_etl_euctr.pipeline import Pipeline
 from coreason_etl_euctr.postgres_loader import PostgresLoader
+from coreason_etl_euctr.redshift_loader import RedshiftLoader
 from coreason_etl_euctr.storage import LocalStorageBackend, S3StorageBackend, StorageBackend
 from coreason_etl_euctr.worker import process_file_content
 
@@ -410,6 +411,13 @@ def main() -> int:
     parser_load = subparsers.add_parser("load", help="Run the Silver layer (Parser/Loader)")
     parser_load.add_argument("--input-dir", default="data/bronze", help="Directory containing raw HTML files")
     parser_load.add_argument("--mode", choices=["FULL", "UPSERT"], default="FULL", help="Loading mode")
+    parser_load.add_argument(
+        "--target-db",
+        choices=["postgres", "redshift"],
+        default="postgres",
+        help="Target database (default: postgres)",
+    )
+    parser_load.add_argument("--iam-role", help="IAM Role ARN for Redshift COPY command")
     _add_s3_args(parser_load)
 
     args = parser.parse_args()
@@ -427,10 +435,29 @@ def main() -> int:
         )
     elif args.command == "load":
         # S3 Support for Load
-        # We reuse the same _get_storage_backend logic, but allow input-dir to be ignored if S3 is present?
-        # Typically, if S3 args are present, we use S3.
         storage = _get_storage_backend(args)
-        run_silver(input_dir=args.input_dir, mode=args.mode, storage_backend=storage)
+
+        loader: BaseLoader
+        if args.target_db == "redshift":
+            # For Redshift, S3 configuration is mandatory for staging
+            s3_bucket = args.s3_bucket or os.getenv("EUCTR_S3_BUCKET")
+            if not s3_bucket:
+                logger.error("Redshift loader requires --s3-bucket or EUCTR_S3_BUCKET env var.")
+                return 1
+
+            s3_prefix = str(args.s3_prefix or os.getenv("EUCTR_S3_PREFIX", "") or "")
+            s3_region = args.s3_region or os.getenv("EUCTR_S3_REGION")
+
+            loader = RedshiftLoader(
+                s3_bucket=s3_bucket,
+                s3_prefix=s3_prefix,
+                region=s3_region,
+                iam_role=args.iam_role,
+            )
+        else:
+            loader = PostgresLoader()
+
+        run_silver(input_dir=args.input_dir, mode=args.mode, storage_backend=storage, loader=loader)
     else:
         parser.print_help()
         return 1
