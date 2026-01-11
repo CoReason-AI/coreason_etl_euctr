@@ -30,6 +30,19 @@ def test_downloader_initialization(tmp_path: Path) -> None:
 
     assert output_dir.exists()
     assert downloader.client is not None
+    assert downloader.sleep_seconds == 1.0  # Default
+    assert downloader.country_priority == ["3rd", "GB", "DE"]  # Default
+
+
+def test_downloader_configurable(tmp_path: Path) -> None:
+    """Test that Downloader respects configuration."""
+    downloader = Downloader(
+        output_dir=tmp_path,
+        sleep_seconds=0.5,
+        country_priority=["FR", "ES"],
+    )
+    assert downloader.sleep_seconds == 0.5
+    assert downloader.country_priority == ["FR", "ES"]
 
 
 def test_downloader_default_client(tmp_path: Path) -> None:
@@ -58,7 +71,7 @@ def test_download_trial_success_primary(tmp_path: Path, mock_httpx_client: Magic
         result = downloader.download_trial("2023-123")
 
         # Should have slept once
-        mock_sleep.assert_called_once_with(1)
+        mock_sleep.assert_called_once_with(1.0)
 
     assert result is True
 
@@ -114,6 +127,30 @@ def test_download_trial_fallback_success(tmp_path: Path, mock_httpx_client: Magi
     # Verify metadata
     meta_file = tmp_path / "2023-123.meta"
     assert "source_country=GB" in meta_file.read_text(encoding="utf-8")
+
+
+def test_download_trial_custom_priority(tmp_path: Path, mock_httpx_client: MagicMock) -> None:
+    """Test fallback logic with custom country priority."""
+    downloader = Downloader(output_dir=tmp_path, client=mock_httpx_client, country_priority=["FR", "ES"])
+
+    # 1. FR (404)
+    # 2. ES (200)
+    mock_httpx_client.get.side_effect = [
+        MagicMock(status_code=404),
+        MagicMock(status_code=200, text="<html>ES Content</html>"),
+    ]
+
+    with patch("time.sleep"):
+        result = downloader.download_trial("2023-123")
+
+    assert result is True
+    mock_httpx_client.get.assert_has_calls(
+        [
+            call("https://www.clinicaltrialsregister.eu/ctr-search/trial/2023-123/FR"),
+            call("https://www.clinicaltrialsregister.eu/ctr-search/trial/2023-123/ES"),
+        ]
+    )
+    assert (tmp_path / "2023-123.meta").read_text(encoding="utf-8").find("source_country=ES") != -1
 
 
 def test_download_hashing_cdc(tmp_path: Path, mock_httpx_client: MagicMock) -> None:

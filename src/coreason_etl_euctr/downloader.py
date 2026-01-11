@@ -28,13 +28,16 @@ class Downloader:
     """
 
     BASE_URL_TEMPLATE = "https://www.clinicaltrialsregister.eu/ctr-search/trial/{id}/{country}"
-    COUNTRY_PRIORITY: List[str] = ["3rd", "GB", "DE"]
+    # Default priority if not configured
+    DEFAULT_COUNTRY_PRIORITY: List[str] = ["3rd", "GB", "DE"]
 
     def __init__(
         self,
         output_dir: Optional[Union[str, Path]] = None,
         client: Optional[httpx.Client] = None,
         storage_backend: Optional[StorageBackend] = None,
+        sleep_seconds: float = 1.0,
+        country_priority: Optional[List[str]] = None,
     ) -> None:
         """
         Initialize the Downloader.
@@ -45,6 +48,8 @@ class Downloader:
             client: Optional httpx.Client instance.
             storage_backend: The storage backend to use (Local or S3).
                              Takes precedence over output_dir.
+            sleep_seconds: Seconds to sleep between requests (rate limiting). Defaults to 1.0.
+            country_priority: List of country codes to try in order. Defaults to ["3rd", "GB", "DE"].
         """
         if storage_backend:
             self.storage = storage_backend
@@ -54,8 +59,12 @@ class Downloader:
             raise ValueError("Either output_dir or storage_backend must be provided.")
 
         self.client = client or httpx.Client(
-            headers={"User-Agent": "Coreason-ETL-Downloader/1.0"}, follow_redirects=True, timeout=30.0
+            headers={"User-Agent": "Coreason-ETL-Downloader/1.0"},
+            follow_redirects=True,
+            timeout=30.0,
         )
+        self.sleep_seconds = sleep_seconds
+        self.country_priority = country_priority or self.DEFAULT_COUNTRY_PRIORITY
 
     def download_trial(self, eudract_number: str) -> bool:
         """
@@ -68,11 +77,12 @@ class Downloader:
         Returns:
             True if download was successful and saved, False otherwise.
         """
-        for country in self.COUNTRY_PRIORITY:
+        for country in self.country_priority:
             url = self.BASE_URL_TEMPLATE.format(id=eudract_number, country=country)
 
-            # Politeness delay
-            time.sleep(1)
+            # Politeness delay (Configurable)
+            if self.sleep_seconds > 0:
+                time.sleep(self.sleep_seconds)
 
             try:
                 logger.debug(f"Attempting to fetch trial {eudract_number} from {country}...")
@@ -172,7 +182,13 @@ class Downloader:
             logger.error(f"Failed to write file for {eudract_number}: {e}")
             raise
 
-    def _write_metadata(self, meta_key: str, source_country: str, eudract_number: str, file_hash: str) -> None:
+    def _write_metadata(
+        self,
+        meta_key: str,
+        source_country: str,
+        eudract_number: str,
+        file_hash: str,
+    ) -> None:
         """Helper to write the .meta sidecar file."""
         url = self.BASE_URL_TEMPLATE.format(id=eudract_number, country=source_country)
         meta_content = f"source_country={source_country}\nurl={url}\ndownloaded_at={time.time()}\nhash={file_hash}"
