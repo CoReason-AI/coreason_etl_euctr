@@ -10,14 +10,15 @@
 
 import time
 import unicodedata
-from typing import Generator, List, Optional, Tuple
+from datetime import date
+from typing import Callable, Generator, List, Optional, Tuple
 
 import httpx
-from bs4 import BeautifulSoup, Comment
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from coreason_etl_euctr.logger import logger
-from coreason_etl_euctr.utils import is_retryable_error
+from coreason_etl_euctr.utils import is_retryable_error, parse_flexible_date
 
 
 class Crawler:
@@ -27,14 +28,16 @@ class Crawler:
 
     BASE_URL = "https://www.clinicaltrialsregister.eu/ctr-search/search"
 
-    def __init__(self, client: Optional[httpx.Client] = None) -> None:
+    def __init__(self, client: Optional[httpx.Client] = None, sleep_seconds: float = 1.0) -> None:
         """
         Initialize the Crawler.
 
         Args:
             client: Optional httpx.Client instance. If not provided, a default one will be created.
+            sleep_seconds: Seconds to sleep between requests (rate limiting). Defaults to 1.0.
         """
         self.client = client or httpx.Client(headers={"User-Agent": "Coreason-ETL-Crawler/1.0"}, follow_redirects=True)
+        self.sleep_seconds = sleep_seconds
 
     @retry(  # type: ignore[misc]
         stop=stop_after_attempt(3),
@@ -43,7 +46,11 @@ class Crawler:
         reraise=True,
     )
     def fetch_search_page(
-        self, page_num: int = 1, query: str = "", date_from: Optional[str] = None, date_to: Optional[str] = None
+        self,
+        page_num: int = 1,
+        query: str = "",
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
     ) -> str:
         """
         Fetch the HTML content of a search result page.
@@ -66,8 +73,9 @@ class Crawler:
         if date_to:
             params["dateTo"] = date_to
 
-        # Politeness: implementation of R.3.4.1
-        time.sleep(1)
+        # Politeness: implementation of R.3.4.1 (Configurable)
+        if self.sleep_seconds > 0:
+            time.sleep(self.sleep_seconds)
 
         try:
             logger.debug(f"Fetching search page {page_num}...")
@@ -84,10 +92,10 @@ class Crawler:
         max_pages: int = 1,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-    ) -> Generator[Tuple[int, List[str]], None, None]:
+    ) -> Generator[Tuple[int, List[Tuple[str, Optional[date]]]], None, None]:
         """
-        Iterate through search pages and yield (page_num, list_of_ids).
-        Handles pagination and date filtering (CDC).
+        Iterate through search pages and yield (page_num, list_of_tuples).
+        Each tuple is (EudraCT Number, Max Date Found for that Trial).
 
         Args:
             start_page: The starting page number.
@@ -96,45 +104,44 @@ class Crawler:
             date_to: End date for CDC (YYYY-MM-DD).
 
         Yields:
-            Tuple containing the page number and a list of EudraCT Numbers found on that page.
+            Tuple containing the page number and a list of (id, date) found on that page.
         """
         end_page = start_page + max_pages
         for i in range(start_page, end_page):
-            # We explicitly do NOT catch exceptions here (except for logging context if needed),
-            # because we want failures to propagate up to the caller (Orchestrator).
-            # This ensures that if a page fails, we don't mark it as 'completed' in the state,
-            # allowing the pipeline to resume from this page on the next run.
             html = self.fetch_search_page(page_num=i, date_from=date_from, date_to=date_to)
-            ids = self.extract_ids(html)
+            items = self.extract_ids(html)
 
-            if not ids:
+            if not items:
                 logger.warning(f"No IDs found on page {i}. Stopping harvest.")
                 break
 
-            yield (i, ids)
+            yield (i, items)
 
-    def extract_ids(self, html_content: str) -> List[str]:
+    def extract_ids(self, html_content: str) -> List[Tuple[str, Optional[date]]]:
         """
-        Parse the search result HTML to extract EudraCT Numbers.
-
-        Args:
-            html_content: The raw HTML content of the search page.
-
-        Returns:
-            A list of unique EudraCT Numbers found on the page.
+        Parse the search result HTML to extract EudraCT Numbers AND Dates.
+        Returns a list of tuples: (eudract_number, date_of_record).
         """
         soup = BeautifulSoup(html_content, "html.parser")
-        ids: List[str] = []
+        items: List[Tuple[str, Optional[date]]] = []
 
-        # Helper to normalize text (handles non-breaking spaces)
+        # The search result structure typically wraps each trial in a table or div.
+        # We need to find the container to associate the ID with its date.
+        # Assuming typical structure:
+        # <table> ... <tr><td>EudraCT Number: ...</td> ... <td>Date ...: ...</td></tr> ... </table>
+        # Or <div class="result"> ... </div>
+
+        # Strategy: Find "EudraCT Number:" labels, then look for date within the same container.
+
         def normalize(t: str) -> str:
             return unicodedata.normalize("NFKC", t)
 
-        # Find all elements that contain the label text "EudraCT Number:"
-        labels = soup.find_all(string=lambda text: "EudraCT Number:" in normalize(text) if text else False)
+        def is_eudract_label(text: str) -> bool:
+            return "EudraCT Number:" in normalize(text) if text else False
+
+        labels = soup.find_all(string=is_eudract_label)
 
         for label in labels:
-            # Ignore comments
             if isinstance(label, Comment):
                 continue
 
@@ -142,34 +149,103 @@ class Crawler:
             if not parent:
                 continue
 
-            # Case 1: Label and Value are in the same text node / element
-            # Example: <span>EudraCT Number: 2004-000015-26</span>
-            full_text = normalize(parent.get_text(strip=True))
-            if "EudraCT Number:" in full_text and len(full_text) > len("EudraCT Number:"):
-                # Extract value from the same string
-                cleaned = full_text.replace("EudraCT Number:", "").strip()
-                if cleaned:
-                    # IDs are usually the first token if there's trailing text
-                    ids.append(cleaned.split()[0])
+            # Find the ID
+            trial_id = self._extract_id_from_label(parent, normalize)
+            if not trial_id:
                 continue
 
-            # Case 2: Label and Value are siblings
-            # Example: <b>EudraCT Number:</b> 2004-001234-56<br/>
+            # Find the Date within the closest common container (e.g., tr, table, div.result)
+            container = parent.find_parent("table")
+            if not container:
+                container = parent.find_parent("div", class_="result")
 
-            # Check the next sibling node (could be a Tag or NavigableString)
-            next_node = parent.next_sibling
+            trial_date = None
+            if container:
+                trial_date = self._extract_date_from_container(container, normalize)
 
-            # Skip pure whitespace/newlines
-            while next_node and (isinstance(next_node, str) and not next_node.strip()):
-                next_node = next_node.next_sibling
+            items.append((trial_id, trial_date))
 
-            if next_node:
-                raw_val = next_node.get_text(strip=True) if hasattr(next_node, "get_text") else str(next_node).strip()
-                val = normalize(raw_val)
-                if val:
-                    ids.append(val.split()[0])
+        # Deduplicate while preserving order. Use ID as key.
+        seen = set()
+        unique_items = []
+        for item in items:
+            if item[0] not in seen:
+                seen.add(item[0])
+                unique_items.append(item)
 
-        # Deduplicate while preserving order
-        unique_ids = list(dict.fromkeys(ids))
-        logger.info(f"Extracted {len(unique_ids)} IDs from page.")
-        return unique_ids
+        logger.info(f"Extracted {len(unique_items)} IDs from page.")
+        return unique_items
+
+    def _extract_id_from_label(self, parent: Tag, normalize_func: Callable[[str], str]) -> Optional[str]:
+        full_text = normalize_func(parent.get_text(strip=True))
+        if "EudraCT Number:" in full_text and len(full_text) > len("EudraCT Number:"):
+            cleaned = full_text.replace("EudraCT Number:", "").strip()
+            if cleaned:
+                return cleaned.split()[0]
+
+        next_node = parent.next_sibling
+        while next_node and (isinstance(next_node, str) and not next_node.strip()):
+            next_node = next_node.next_sibling
+
+        if next_node:
+            raw_val = next_node.get_text(strip=True) if hasattr(next_node, "get_text") else str(next_node).strip()
+            val = normalize_func(raw_val)
+            if val:
+                return val.split()[0]
+        return None
+
+    def _extract_date_from_container(self, container: Tag, normalize_func: Callable[[str], str]) -> Optional[date]:
+        # Look for "Date of Competent Authority Decision" or "Date record first entered"
+        # within the container.
+        date_labels = ["Date of Competent Authority Decision", "Date record first entered"]
+
+        for label_text in date_labels:
+
+            def is_date_label(text: str, label_text: str = label_text) -> bool:
+                return label_text in normalize_func(text) if text else False
+
+            target = container.find(string=is_date_label)
+            if target:
+                # Value is likely next sibling or parent's next sibling
+                parent = target.parent
+                if not parent:
+                    continue
+
+                # Try finding value in next sibling
+                next_node = parent.next_sibling
+                while next_node:
+                    if isinstance(next_node, Comment):
+                        next_node = next_node.next_sibling
+                        continue
+                    if isinstance(next_node, NavigableString) and not next_node.strip():
+                        next_node = next_node.next_sibling
+                        continue
+                    break
+
+                val_text = ""
+                if next_node:
+                    val_text = (
+                        next_node.get_text(strip=True) if hasattr(next_node, "get_text") else str(next_node).strip()
+                    )
+
+                # Sometimes it's in the same text node: "Date...: 2023-01-01"
+                full_text = normalize_func(parent.get_text(strip=True))
+                if ":" in full_text and len(full_text) > len(label_text):
+                    # crude split
+                    possible = full_text.split(":", 1)[1].strip()
+                    if possible:
+                        val_text = possible
+
+                if val_text:
+                    # Clean it
+                    val_text = val_text.strip()
+                    # Try parse
+                    try:
+                        # Attempt to take first date-like token if multiple words
+                        # But dates can be "12 Jan 2023".
+                        # Let's try parsing the whole string first
+                        return parse_flexible_date(val_text)
+                    except ValueError:
+                        # Fallback: simple regex or split?
+                        pass
+        return None

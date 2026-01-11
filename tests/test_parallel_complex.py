@@ -82,9 +82,15 @@ def test_worker_complex_html() -> None:
     """
 
     key = "2021-000123-45.html"
-    source = "file://source"
+    config = {"type": "mock", "content": content}
 
-    result = process_file_content(content, key, source)
+    # We need to patch create_storage_backend to return a mock that returns our content
+    mock_storage = MagicMock()
+    mock_storage.read.return_value = content
+
+    with patch("coreason_etl_euctr.worker.create_storage_backend", return_value=mock_storage):
+        result = process_file_content(key, config)
+
     assert result is not None
 
     trial, drugs, conds = result
@@ -143,7 +149,7 @@ def test_orchestration_aggregation_diverse() -> None:
         StorageObject(key="2.html", mtime=100),
         StorageObject(key="3.html", mtime=100),
     ]
-    mock_storage.read.return_value = "content"
+    mock_storage.get_config.return_value = {"type": "mock"}
 
     with (
         patch("coreason_etl_euctr.main.concurrent.futures.ProcessPoolExecutor") as MockExecutor,

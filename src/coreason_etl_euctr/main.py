@@ -14,6 +14,7 @@ import io
 import os
 import sys
 import time
+from datetime import date
 from pathlib import Path
 from typing import Iterator, List, Optional, Sequence
 
@@ -39,6 +40,8 @@ def run_bronze(
     pipeline: Optional[Pipeline] = None,
     storage_backend: Optional[StorageBackend] = None,
     ignore_hwm: bool = False,
+    sleep_seconds: float = 1.0,
+    country_priority: Optional[List[str]] = None,
 ) -> None:
     """
     Execute the Bronze Layer workflow: Crawl -> Deduplicate -> Download.
@@ -53,11 +56,15 @@ def run_bronze(
         pipeline: Optional injected Pipeline instance (for state management).
         storage_backend: Optional injected StorageBackend (Local or S3).
         ignore_hwm: If True, ignore the High-Water Mark and force a full crawl (R.3.3.1).
+        sleep_seconds: Rate limit sleep time (seconds).
+        country_priority: List of country codes to try in order.
     """
-    crawler = crawler or Crawler()
+    crawler = crawler or Crawler(sleep_seconds=sleep_seconds)
+
     if not downloader:
         storage = storage_backend or LocalStorageBackend(Path(output_dir))
-        downloader = Downloader(storage_backend=storage)
+        downloader = Downloader(storage_backend=storage, sleep_seconds=sleep_seconds, country_priority=country_priority)
+
     pipeline = pipeline or Pipeline()
 
     # R.3.2.2: Retrieve High-Water Mark
@@ -74,12 +81,9 @@ def run_bronze(
         logger.info("Performing Full Crawl (No HWM found)")
 
     # Check if we should resume from state
-    # If start_page is default (1) and we have a saved cursor, use it.
-    # If user explicitly provided start_page != 1, we respect that.
     if not ignore_hwm:
         crawl_cursor = pipeline.get_crawl_cursor()
         if start_page == 1 and crawl_cursor:
-            # Resume from next page
             start_page = crawl_cursor + 1
             logger.info(f"Resuming crawl from page {start_page} (based on saved state).")
 
@@ -91,13 +95,21 @@ def run_bronze(
     except Exception as e:
         logger.warning(f"Could not create directory for ids.csv: {e}")
 
+    # Track Max Date for HWM Update
+    max_date_seen: Optional[date] = None
+
     # Step 1: Crawl
     with open(ids_file, "a", encoding="utf-8") as f:
         # R.3.1.1 & R.3.2.1: Iterate using Crawler.harvest_ids
-        # R.6.1.1: Consuming generator that yields (page_num, ids)
-        for page_num, ids in crawler.harvest_ids(start_page=start_page, max_pages=max_pages, date_from=date_from):
-            for trial_id in ids:
+        for page_num, items in crawler.harvest_ids(start_page=start_page, max_pages=max_pages, date_from=date_from):
+            # items is List[Tuple[str, Optional[date]]]
+            for trial_id, trial_date in items:
                 f.write(f"{trial_id}\n")
+
+                # Update max date seen
+                if trial_date:
+                    if max_date_seen is None or trial_date > max_date_seen:
+                        max_date_seen = trial_date
 
             # Save state after each successful page
             pipeline.set_crawl_cursor(page_num)
@@ -125,13 +137,15 @@ def run_bronze(
         except Exception as e:
             context_logger.error(f"Failed to download {trial_id}: {e}")
 
-    # R.3.2.2: Update High-Water Mark (to today)
-    # Ideally, we should update this based on the latest date found in the data or run start time.
-    # The requirement says "track the maximum timestamp... processed".
-    # Since we filter by Date From, we can safely set HWM to "now" assuming we caught everything up to now.
-    from datetime import date
-
-    pipeline.set_high_water_mark(date.today())
+    # R.3.2.2: Update High-Water Mark with STRICT logic
+    if max_date_seen:
+        logger.info(f"Updating High-Water Mark to {max_date_seen} (Max date found in search results).")
+        pipeline.set_high_water_mark(max_date_seen)
+    else:
+        if len(unique_ids) > 0:
+            logger.warning("No dates extracted from search results. High-Water Mark NOT updated.")
+        else:
+            pass
 
     logger.info(f"Bronze run complete. Downloaded {success_count}/{len(unique_ids)} trials.")
 
@@ -170,16 +184,8 @@ def run_silver(
             return
         storage = LocalStorageBackend(Path(input_dir))
 
-    # We need to process separate streams for each target table
-    # Since Pipeline consumes an iterator, we need to generate separate iterators or lists.
-    # For simplicity and to match the 'bulk_load_stream' interface, we will:
-    # 1. Collect all valid parsed models into temporary lists (or use tee, but lists are safer for now if fit in mem).
-    #    However, to be truly streaming, we should probably do 3 passes or use a generator that yields different types.
-    #    But 'bulk_load_stream' takes one stream at a time.
-    #    Let's parse once and split into buckets.
-
-    # NOTE: In a massive scale scenario, we would write to temp files on disk.
-    # For this iteration, we'll accumulate in memory as per current architectural scope.
+    # R.6.1.2: Parallel Parsing Config
+    storage_config = storage.get_config()
 
     trials = []
     drugs = []
@@ -192,9 +198,6 @@ def run_silver(
     silver_watermark = pipeline.get_silver_watermark()
     current_run_start_time = time.time()
 
-    # If this is the first run, watermark is None, so we process everything.
-    # If we have a watermark, we skip files older than it.
-    # If we have a cutoff time (start time), we skip files strictly newer than it (future).
     files_to_process = []
     skipped_old_count = 0
     skipped_future_count = 0
@@ -208,8 +211,6 @@ def run_silver(
             continue
 
         # Check Upper Bound (Future/Current Run files)
-        # We use current_run_start_time as the cutoff.
-        # Files created *after* we started this run should be picked up in the NEXT run.
         if mtime > current_run_start_time:
             skipped_future_count += 1
             continue
@@ -223,23 +224,19 @@ def run_silver(
 
     logger.info(f"Processing {len(files_to_process)} new/modified files.")
 
-    # R.6.1.2: Parallel Parsing
+    # R.6.1.2: Parallel Parsing with I/O in worker
     chunk_size = 50
     with concurrent.futures.ProcessPoolExecutor() as executor:
         for i in range(0, len(files_to_process), chunk_size):
             chunk = files_to_process[i : i + chunk_size]
             future_to_key = {}
 
-            # Read IO in main thread (or thread pool if we wanted, but simple iteration is safer for now)
+            # Submit tasks passing CONFIG and FILE_KEY only
             for file_obj in chunk:
                 file_key = file_obj.key
-                try:
-                    content = storage.read(file_key)
-                    url_source = f"file://{file_key}"
-                    future = executor.submit(process_file_content, content, file_key, url_source)
-                    future_to_key[future] = file_key
-                except Exception as e:
-                    logger.error(f"Failed to read file {file_key}: {e}")
+                # Do NOT read content here. Pass key and config.
+                future = executor.submit(process_file_content, file_key, storage_config)
+                future_to_key[future] = file_key
 
             for future in concurrent.futures.as_completed(future_to_key):
                 key = future_to_key[future]
@@ -402,6 +399,11 @@ def main() -> int:
     parser_crawl.add_argument(
         "--ignore-hwm", action="store_true", help="Ignore High-Water Mark and force full re-crawl"
     )
+    # Configurable options
+    parser_crawl.add_argument("--sleep-seconds", type=float, default=1.0, help="Seconds to sleep between requests")
+    parser_crawl.add_argument(
+        "--country-priority", nargs="+", default=["3rd", "GB", "DE"], help="List of country codes to prioritize"
+    )
     _add_s3_args(parser_crawl)
 
     # Silver / Load
@@ -420,6 +422,8 @@ def main() -> int:
             max_pages=args.max_pages,
             storage_backend=storage,
             ignore_hwm=args.ignore_hwm,
+            sleep_seconds=args.sleep_seconds,
+            country_priority=args.country_priority,
         )
     elif args.command == "load":
         # S3 Support for Load

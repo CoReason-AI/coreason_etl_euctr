@@ -11,7 +11,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Optional, cast
+from typing import Any, Dict, Iterator, Optional, cast
 
 try:
     import boto3
@@ -64,6 +64,14 @@ class StorageBackend(ABC):
         """
         pass  # pragma: no cover
 
+    @abstractmethod
+    def get_config(self) -> Dict[str, Any]:
+        """
+        Return a configuration dictionary that can be used to recreate this backend.
+        Useful for passing backend configuration to worker processes.
+        """
+        pass  # pragma: no cover
+
 
 class LocalStorageBackend(StorageBackend):
     """
@@ -93,6 +101,9 @@ class LocalStorageBackend(StorageBackend):
         for file_path in self.base_path.glob(pattern):
             yield StorageObject(key=file_path.name, mtime=file_path.stat().st_mtime)
 
+    def get_config(self) -> Dict[str, Any]:
+        return {"type": "local", "base_path": str(self.base_path)}
+
 
 class S3StorageBackend(StorageBackend):
     """
@@ -105,6 +116,7 @@ class S3StorageBackend(StorageBackend):
 
         self.bucket_name = bucket_name
         self.prefix = prefix
+        self.region_name = region_name
         self.client = boto3.client("s3", region_name=region_name)
 
     def _get_full_key(self, key: str) -> str:
@@ -173,3 +185,28 @@ class S3StorageBackend(StorageBackend):
 
                     mtime = obj["LastModified"].timestamp()
                     yield StorageObject(key=relative_key, mtime=mtime)
+
+    def get_config(self) -> Dict[str, Any]:
+        return {
+            "type": "s3",
+            "bucket_name": self.bucket_name,
+            "prefix": self.prefix,
+            "region_name": self.region_name,
+        }
+
+
+def create_storage_backend(config: Dict[str, Any]) -> StorageBackend:
+    """
+    Factory function to create a StorageBackend instance from a configuration dictionary.
+    """
+    backend_type = config.get("type")
+    if backend_type == "local":
+        return LocalStorageBackend(base_path=Path(config["base_path"]))
+    elif backend_type == "s3":
+        return S3StorageBackend(
+            bucket_name=config["bucket_name"],
+            prefix=config.get("prefix", ""),
+            region_name=config.get("region_name"),
+        )
+    else:
+        raise ValueError(f"Unknown storage backend type: {backend_type}")

@@ -25,12 +25,6 @@ def test_harvest_ids_propagates_exception() -> None:
     crawler = Crawler(client=mock_client)
 
     # Mock fetch_search_page to raise an error
-    # Since fetch_search_page is a method on Crawler, and we want to test harvest_ids calling it.
-    # We can mock the fetch_search_page method directly on the instance or patch it.
-    # However, fetch_search_page has a @retry decorator, so mocking it on the instance is trickier
-    # if we want to bypass the retry or test the retry.
-    # But harvest_ids calls self.fetch_search_page.
-
     with patch.object(crawler, "fetch_search_page", side_effect=ValueError("Network Error")):
         gen = crawler.harvest_ids(start_page=1, max_pages=1)
 
@@ -47,6 +41,8 @@ def test_harvest_ids_yields_correctly() -> None:
     html = "<html><body><div><span>EudraCT Number: 2022-000123-45</span></div></body></html>"
     with patch.object(crawler, "fetch_search_page", return_value=html):
         gen = crawler.harvest_ids(start_page=10, max_pages=1)
-        page_num, ids = next(gen)
+        page_num, items = next(gen)
         assert page_num == 10
+        # Check ID presence in the list of tuples
+        ids = [item[0] for item in items]
         assert "2022-000123-45" in ids
