@@ -78,7 +78,7 @@ def test_incremental_windowing(tmp_path: Path) -> None:
             run_silver(input_dir=str(d), pipeline=mock_pipeline, loader=mock_loader)
 
         # Verify Logic via submit calls
-        # submit(process_file_content, content, key, source)
+        # submit(process_file_content, file_key, storage_config)
 
         # We expect only "new.html" to be submitted.
         # old.html (mtime=T0) <= T0 (watermark) -> Skip
@@ -86,15 +86,17 @@ def test_incremental_windowing(tmp_path: Path) -> None:
 
         assert executor_instance.submit.call_count == 1
         call_args = executor_instance.submit.call_args
-        # args[1] is file_key (if we follow order: func, content, key, source)
-        # process_file_content signature: (content, file_key, url_source)
-        # submit(func, *args)
         # args[0] is process_file_content
-        # args[1] is content
-        # args[2] is file_key
+        # args[1] is file_key
+        # args[2] is storage_config
 
-        file_key = call_args[0][2]
+        file_key = call_args[0][1]
         assert file_key == "new.html"
+
+        # Verify storage config passed
+        config = call_args[0][2]
+        assert config["type"] == "local"
+        assert config["base_path"] == str(d)
 
     # Verify Watermark Update
     mock_pipeline.set_silver_watermark.assert_called_once_with(T0 + 50)

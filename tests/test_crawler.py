@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+from datetime import date
 from typing import Generator
 from unittest.mock import MagicMock, patch
 
@@ -29,6 +30,22 @@ def test_crawler_initialization(mock_httpx_client: MagicMock) -> None:
     """Test that Crawler initializes with a client."""
     crawler = Crawler()
     assert crawler.client is not None
+    assert crawler.sleep_seconds == 1.0  # Default
+
+
+def test_crawler_configurable_sleep(mock_httpx_client: MagicMock) -> None:
+    """Test that Crawler respects configurable sleep time."""
+    crawler = Crawler(client=mock_httpx_client, sleep_seconds=2.5)
+    assert crawler.sleep_seconds == 2.5
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = "<html>Success</html>"
+    mock_httpx_client.get.return_value = mock_response
+
+    with patch("time.sleep") as mock_sleep:
+        crawler.fetch_search_page(page_num=1)
+        mock_sleep.assert_called_once_with(2.5)
 
 
 def test_fetch_search_page_success(mock_httpx_client: MagicMock) -> None:
@@ -42,7 +59,7 @@ def test_fetch_search_page_success(mock_httpx_client: MagicMock) -> None:
         crawler = Crawler(client=mock_httpx_client)
         html = crawler.fetch_search_page(page_num=1)
 
-        mock_sleep.assert_called_once_with(1)
+        mock_sleep.assert_called_once_with(1.0)
 
     assert html == "<html>Success</html>"
     mock_httpx_client.get.assert_called_once()
@@ -98,7 +115,40 @@ def test_extract_ids_simple() -> None:
     """
     crawler = Crawler()
     ids = crawler.extract_ids(html)
-    assert ids == ["2004-000015-26", "2023-123456-78"]
+    # Now returns list of tuples (id, date)
+    assert ids == [("2004-000015-26", None), ("2023-123456-78", None)]
+
+
+def test_extract_ids_with_dates() -> None:
+    """Test ID extraction with associated dates."""
+    html = """
+    <div class="result">
+        <table>
+            <tr>
+                <td>EudraCT Number:</td> <td>2004-000015-26</td>
+            </tr>
+            <tr>
+                <td>Date of Competent Authority Decision:</td> <td>2023-01-15</td>
+            </tr>
+        </table>
+    </div>
+    <div class="result">
+        <table>
+             <tr>
+                <td>EudraCT Number:</td> <td>2024-000123-45</td>
+            </tr>
+             <tr>
+                <td>Date record first entered:</td> <td>2024-02-20</td>
+            </tr>
+        </table>
+    </div>
+    """
+    crawler = Crawler()
+    ids = crawler.extract_ids(html)
+    assert ids == [
+        ("2004-000015-26", date(2023, 1, 15)),
+        ("2024-000123-45", date(2024, 2, 20)),
+    ]
 
 
 def test_extract_ids_text_variant() -> None:
@@ -112,7 +162,7 @@ def test_extract_ids_text_variant() -> None:
     """
     crawler = Crawler()
     ids = crawler.extract_ids(html)
-    assert ids == ["2004-000015-26"]
+    assert ids == [("2004-000015-26", None)]
 
 
 def test_extract_ids_label_text_node_variant() -> None:
@@ -124,7 +174,7 @@ def test_extract_ids_label_text_node_variant() -> None:
     """
     crawler = Crawler()
     ids = crawler.extract_ids(html)
-    assert ids == ["2004-001234-56"]
+    assert ids == [("2004-001234-56", None)]
 
 
 def test_extract_ids_empty() -> None:
@@ -145,7 +195,7 @@ def test_extract_ids_deduplication() -> None:
     """
     crawler = Crawler()
     ids = crawler.extract_ids(html)
-    assert ids == ["2004-000015-26"]
+    assert ids == [("2004-000015-26", None)]
 
 
 def test_extract_ids_orphaned_label() -> None:
@@ -189,7 +239,7 @@ def test_extract_ids_unicode_handling() -> None:
     """
     crawler = Crawler()
     ids = crawler.extract_ids(html)
-    assert ids == ["2004-001234-56"]
+    assert ids == [("2004-001234-56", None)]
 
 
 def test_harvest_ids_pagination(mock_httpx_client: MagicMock) -> None:
@@ -210,8 +260,8 @@ def test_harvest_ids_pagination(mock_httpx_client: MagicMock) -> None:
 
     # Expect tuples: (page_num, [ids])
     assert len(results) == 2
-    assert results[0] == (1, ["ID-1"])
-    assert results[1] == (2, ["ID-2"])
+    assert results[0] == (1, [("ID-1", None)])
+    assert results[1] == (2, [("ID-2", None)])
 
     assert mock_httpx_client.get.call_count == 2
     # Verify page params
@@ -237,7 +287,7 @@ def test_harvest_ids_stops_on_empty_page(mock_httpx_client: MagicMock) -> None:
 
     # Should only get ID-1, then stop at page 2
     assert len(results) == 1
-    assert results[0] == (1, ["ID-1"])
+    assert results[0] == (1, [("ID-1", None)])
     assert mock_httpx_client.get.call_count == 2
 
 
@@ -263,7 +313,7 @@ def test_harvest_ids_stops_on_exception(mock_httpx_client: MagicMock) -> None:
 
         # First page should succeed
         p1 = next(gen)
-        assert p1 == (1, ["ID-1"])
+        assert p1 == (1, [("ID-1", None)])
 
         # Second page should raise exception
         with pytest.raises(Exception, match="Simulated Fetch Error"):

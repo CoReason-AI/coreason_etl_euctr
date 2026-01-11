@@ -29,9 +29,14 @@ def test_process_file_content_valid() -> None:
     </table>
     """
     key = "2020-123456-78.html"
-    source = "file://2020-123456-78.html"
+    config = {"type": "mock", "content": content}
 
-    result = process_file_content(content, key, source)
+    mock_storage = MagicMock()
+    mock_storage.read.return_value = content
+
+    with patch("coreason_etl_euctr.worker.create_storage_backend", return_value=mock_storage):
+        result = process_file_content(key, config)
+
     assert result is not None
     trial, drugs, conds = result
 
@@ -51,10 +56,16 @@ def test_process_file_content_invalid_id() -> None:
     </table>
     """
     key = "2020-123456-78.html"  # Mismatch
-    source = "file://..."
+    config = {"type": "mock", "content": content}
+
+    mock_storage = MagicMock()
+    mock_storage.read.return_value = content
 
     # We expect a warning log. Patch logger to verify.
-    with patch("coreason_etl_euctr.worker.logger") as mock_logger:
+    with (
+        patch("coreason_etl_euctr.worker.logger") as mock_logger,
+        patch("coreason_etl_euctr.worker.create_storage_backend", return_value=mock_storage),
+    ):
         # Bind returns a new logger proxy, so we need to mock the result of bind too
         # logger.bind(...) returns context_logger
         # context_logger.warning(...)
@@ -62,7 +73,7 @@ def test_process_file_content_invalid_id() -> None:
         mock_context_logger = MagicMock()
         mock_logger.bind.return_value = mock_context_logger
 
-        result = process_file_content(content, key, source)
+        result = process_file_content(key, config)
 
         assert result is not None
         trial, _, _ = result
@@ -78,14 +89,20 @@ def test_process_file_content_generic_error() -> None:
     """Test generic exception handling."""
     content = "<html>Content</html>"
     key = "2020-123456-78.html"
-    source = "file://..."
+    config = {"type": "mock", "content": content}
+
+    mock_storage = MagicMock()
+    mock_storage.read.return_value = content
 
     # Patch Parser to raise generic Exception
-    with patch("coreason_etl_euctr.worker.Parser") as MockParser:
+    with (
+        patch("coreason_etl_euctr.worker.Parser") as MockParser,
+        patch("coreason_etl_euctr.worker.create_storage_backend", return_value=mock_storage),
+    ):
         mock_instance = MockParser.return_value
         mock_instance.parse_trial.side_effect = Exception("Boom")
 
-        result = process_file_content(content, key, source)
+        result = process_file_content(key, config)
         assert result is None
 
 
@@ -93,8 +110,13 @@ def test_process_file_content_parse_error() -> None:
     """Test handling of parse errors (missing ID)."""
     content = "<html>Empty</html>"
     key = "2020-123456-78.html"
+    config = {"type": "mock", "content": content}
 
-    result = process_file_content(content, key, "src")
+    mock_storage = MagicMock()
+    mock_storage.read.return_value = content
+
+    with patch("coreason_etl_euctr.worker.create_storage_backend", return_value=mock_storage):
+        result = process_file_content(key, config)
     assert result is None
 
 
@@ -108,7 +130,8 @@ def test_run_silver_parallel_execution() -> None:
         StorageObject(key="2020-001.html", mtime=1000),
         StorageObject(key="2020-002.html", mtime=1000),
     ]
-    mock_storage.read.side_effect = lambda k: f"<html>Content for {k}</html>"
+    # In run_silver, we now only need get_config
+    mock_storage.get_config.return_value = {"type": "mock"}
 
     mock_pipeline = MagicMock()
     mock_pipeline.get_silver_watermark.return_value = None

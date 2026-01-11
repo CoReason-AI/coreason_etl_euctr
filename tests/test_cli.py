@@ -18,9 +18,14 @@ def test_cli_crawl_defaults() -> None:
     with patch("sys.argv", ["euctr-etl", "crawl"]), patch("coreason_etl_euctr.main.run_bronze") as mock_run:
         ret = main()
         assert ret == 0
-        # Updated to include storage_backend default (None)
         mock_run.assert_called_once_with(
-            output_dir="data/bronze", start_page=1, max_pages=1, storage_backend=None, ignore_hwm=False
+            output_dir="data/bronze",
+            start_page=1,
+            max_pages=1,
+            storage_backend=None,
+            ignore_hwm=False,
+            sleep_seconds=1.0,
+            country_priority=["3rd", "GB", "DE"],
         )
 
 
@@ -44,9 +49,44 @@ def test_cli_crawl_custom_args() -> None:
     ):
         ret = main()
         assert ret == 0
-        # Updated to include storage_backend default (None)
         mock_run.assert_called_once_with(
-            output_dir="custom/dir", start_page=5, max_pages=10, storage_backend=None, ignore_hwm=False
+            output_dir="custom/dir",
+            start_page=5,
+            max_pages=10,
+            storage_backend=None,
+            ignore_hwm=False,
+            sleep_seconds=1.0,
+            country_priority=["3rd", "GB", "DE"],
+        )
+
+
+def test_cli_crawl_config_args() -> None:
+    """Test the crawl command with configuration arguments."""
+    with (
+        patch(
+            "sys.argv",
+            [
+                "euctr-etl",
+                "crawl",
+                "--sleep-seconds",
+                "0.5",
+                "--country-priority",
+                "FR",
+                "ES",
+            ],
+        ),
+        patch("coreason_etl_euctr.main.run_bronze") as mock_run,
+    ):
+        ret = main()
+        assert ret == 0
+        mock_run.assert_called_once_with(
+            output_dir="data/bronze",
+            start_page=1,
+            max_pages=1,
+            storage_backend=None,
+            ignore_hwm=False,
+            sleep_seconds=0.5,
+            country_priority=["FR", "ES"],
         )
 
 

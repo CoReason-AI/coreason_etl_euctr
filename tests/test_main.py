@@ -28,6 +28,8 @@ def test_main_run_silver_explicit_backend(tmp_path: Path) -> None:
     mock_storage = MagicMock()
     # Mock list_files to return empty list so loop doesn't run
     mock_storage.list_files.return_value = []
+    # Mock get_config
+    mock_storage.get_config.return_value = {"type": "mock"}
 
     mock_loader = MagicMock()
 
@@ -53,8 +55,13 @@ def test_run_bronze_flow(tmp_path: Path) -> None:
     # Setup mocks
     # Mock harvest_ids generator directly since run_bronze calls it
     # We yield duplicate IDs to verify deduplication
-    # harvest_ids now yields (page_num, [ids])
-    mock_crawler.harvest_ids.return_value = iter([(1, ["ID1", "ID2"]), (2, ["ID2", "ID3"])])
+    # harvest_ids now yields (page_num, [(id, date)])
+    mock_crawler.harvest_ids.return_value = iter(
+        [
+            (1, [("ID1", date(2023, 1, 2)), ("ID2", date(2023, 1, 3))]),
+            (2, [("ID2", date(2023, 1, 3)), ("ID3", date(2023, 1, 4))]),
+        ]
+    )
     mock_downloader.download_trial.return_value = True
 
     # Setup crawl cursor check (return None to indicate no prior state)
@@ -83,8 +90,8 @@ def test_run_bronze_flow(tmp_path: Path) -> None:
     assert mock_downloader.download_trial.call_count == 3
     mock_downloader.download_trial.assert_has_calls([call("ID1"), call("ID2"), call("ID3")], any_order=True)
 
-    # Verify HWM update
-    mock_pipeline.set_high_water_mark.assert_called_once()
+    # Verify HWM update with MAX DATE (2023-01-04)
+    mock_pipeline.set_high_water_mark.assert_called_once_with(date(2023, 1, 4))
 
 
 def test_run_bronze_no_hwm(tmp_path: Path) -> None:
@@ -168,7 +175,7 @@ def test_run_bronze_saves_cursor(tmp_path: Path) -> None:
     mock_pipeline = MagicMock()
 
     # Yield 2 pages
-    mock_crawler.harvest_ids.return_value = iter([(1, ["ID1"]), (2, ["ID2"])])
+    mock_crawler.harvest_ids.return_value = iter([(1, [("ID1", None)]), (2, [("ID2", None)])])
 
     run_bronze(
         output_dir=str(tmp_path),
@@ -214,15 +221,9 @@ def test_run_bronze_handles_crawl_exception(tmp_path: Path) -> None:
     # If harvest_ids crashes entirely (unhandled), run_bronze crashes (which is expected).
     # But let's assume harvest_ids yielded 'ID1' before crashing or finishing.
 
-    def gen() -> Generator[Tuple[int, List[str]], None, None]:
-        yield (1, ["ID1"])
-        # Simulate clean exit or continued yield after handled internal error
-        # If we raise here, run_bronze loop will crash unless wrapped.
-        # But run_bronze wraps the loop? No, it just iterates.
-        # The Crawler.harvest_ids handles internal page errors.
-        # So from run_bronze perspective, it just receives IDs.
-        # So this test effectively tests that run_bronze processes whatever it gets.
-        yield (2, ["ID2"])
+    def gen() -> Generator[Tuple[int, List[Tuple[str, None]]], None, None]:
+        yield (1, [("ID1", None)])
+        yield (2, [("ID2", None)])
 
     mock_crawler.harvest_ids.return_value = gen()
 
@@ -242,7 +243,7 @@ def test_run_bronze_handles_download_exception(tmp_path: Path) -> None:
     mock_crawler = MagicMock()
     mock_downloader = MagicMock()
 
-    mock_crawler.harvest_ids.return_value = iter([(1, ["ID1", "ID2"])])
+    mock_crawler.harvest_ids.return_value = iter([(1, [("ID1", None), ("ID2", None)])])
     # ID1 fails, ID2 succeeds
     mock_downloader.download_trial.side_effect = [Exception("Disk Full"), True]
 

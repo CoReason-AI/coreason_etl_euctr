@@ -26,7 +26,7 @@ def test_bronze_resume_persistence(tmp_path: Path) -> None:
     mock_pipeline.get_high_water_mark.return_value = None
 
     # Run 1: Crawl Page 1, finds ID "A"
-    mock_crawler.harvest_ids.return_value = iter([(1, ["A"])])
+    mock_crawler.harvest_ids.return_value = iter([(1, [("A", None)])])
     # Setup crawl cursor check (return None)
     mock_pipeline.get_crawl_cursor.return_value = None
 
@@ -49,7 +49,7 @@ def test_bronze_resume_persistence(tmp_path: Path) -> None:
     mock_downloader.reset_mock()
 
     # Run 2: Crawl Page 2, finds ID "B"
-    mock_crawler.harvest_ids.return_value = iter([(2, ["B"])])
+    mock_crawler.harvest_ids.return_value = iter([(2, [("B", None)])])
 
     run_bronze(
         output_dir=str(output_dir),
@@ -86,7 +86,7 @@ def test_bronze_deduplication_across_runs(tmp_path: Path) -> None:
     (output_dir / "ids.csv").write_text("A\n")
 
     # Run: Crawl Page 1, finds "A" again (and "B")
-    mock_crawler.harvest_ids.return_value = iter([(1, ["A", "B"])])
+    mock_crawler.harvest_ids.return_value = iter([(1, [("A", None), ("B", None)])])
     mock_pipeline.get_crawl_cursor.return_value = None
 
     run_bronze(output_dir=str(output_dir), crawler=mock_crawler, downloader=mock_downloader, pipeline=mock_pipeline)

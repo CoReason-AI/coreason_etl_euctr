@@ -51,7 +51,8 @@ def test_harvest_transient_failure_recovery(mock_client: MagicMock) -> None:
         results = list(crawler.harvest_ids(start_page=1, max_pages=1))
 
     assert len(results) == 1
-    assert results[0] == (1, ["2023-001"])
+    # Expect list of tuples
+    assert results[0] == (1, [("2023-001", None)])
     assert mock_client.get.call_count == 3
 
 
@@ -91,7 +92,7 @@ def test_harvest_mixed_results_sequence_stops_on_error(mock_client: MagicMock) -
         gen = crawler.harvest_ids(start_page=1, max_pages=10)
 
         # 1 OK
-        assert next(gen) == (1, ["ID-1"])
+        assert next(gen) == (1, [("ID-1", None)])
 
         # 2 Error
         with pytest.raises(Exception, match="Simulated Error"):
@@ -110,11 +111,11 @@ def test_extract_ids_malformed_html() -> None:
 
     # Case 2: Unclosed tags
     html = "<div><span>EudraCT Number: 2023-001</span>"
-    assert crawler.extract_ids(html) == ["2023-001"]
+    assert crawler.extract_ids(html) == [("2023-001", None)]
 
     # Case 3: Deeply nested
     html = "<div><div><p>EudraCT Number: 2023-003</p></div></div>"
-    assert crawler.extract_ids(html) == ["2023-003"]
+    assert crawler.extract_ids(html) == [("2023-003", None)]
 
 
 def test_extract_ids_whitespace_variations() -> None:
@@ -135,7 +136,7 @@ def test_extract_ids_whitespace_variations() -> None:
     ids = crawler.extract_ids(html_nbsp)
 
     # Let's assert it works (Fail-First TDD)
-    assert ids == ["2023-NBSP"]
+    assert ids == [("2023-NBSP", None)]
 
 
 def test_extract_ids_multiple_per_page() -> None:
@@ -148,4 +149,5 @@ def test_extract_ids_multiple_per_page() -> None:
     """
     crawler = Crawler()
     ids = crawler.extract_ids(html)
-    assert sorted(ids) == ["2023-001", "2023-002"]
+    extracted = sorted([x[0] for x in ids])
+    assert extracted == ["2023-001", "2023-002"]
