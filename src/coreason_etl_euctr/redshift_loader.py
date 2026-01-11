@@ -318,12 +318,11 @@ class RedshiftLoader(BaseLoader):
             with self.conn.cursor() as cur:
                 logger.info(f"Executing COPY for {target_table} from {s3_uri}...")
                 cur.execute(copy_sql)
-            # We do not delete the S3 file immediately? Or we should?
-            # Good practice to clean up staging files.
-            self._delete_s3_object(s3_uri)
         except psycopg.Error as e:
             logger.error(f"Redshift COPY failed: {e}")
             raise
+        finally:
+            self._delete_s3_object(s3_uri)
 
     def upsert_stream(self, data_stream: IO[str], target_table: str, conflict_keys: List[str]) -> None:
         if not self.conn:
@@ -368,11 +367,12 @@ class RedshiftLoader(BaseLoader):
                 cur.execute(f"DROP TABLE {staging_table}")
 
             logger.info(f"Redshift Upsert complete for {target_table}.")
-            self._delete_s3_object(s3_uri)
 
         except psycopg.Error as e:
             logger.error(f"Redshift Upsert failed: {e}")
             raise
+        finally:
+            self._delete_s3_object(s3_uri)
 
     def truncate_tables(self, table_names: List[str]) -> None:
         if not self.conn:
