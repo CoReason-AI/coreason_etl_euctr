@@ -14,8 +14,6 @@ from unittest.mock import MagicMock, patch
 
 import psycopg
 import pytest
-from botocore.exceptions import ClientError
-
 from coreason_etl_euctr.redshift_loader import ChainedStream, RedshiftLoader, TextToBytesWrapper
 
 
@@ -60,18 +58,18 @@ class TestChainedStream:
 
 
 class TestRedshiftLoader:
-    @pytest.fixture
+    @pytest.fixture  # type: ignore[misc]
     def mock_boto3(self) -> Any:
         with patch("coreason_etl_euctr.redshift_loader.boto3") as mock:
             yield mock
 
-    @pytest.fixture
+    @pytest.fixture  # type: ignore[misc]
     def mock_psycopg(self) -> Any:
         with patch("coreason_etl_euctr.redshift_loader.psycopg") as mock:
             mock.Error = psycopg.Error
             yield mock
 
-    @pytest.fixture
+    @pytest.fixture  # type: ignore[misc]
     def loader(self, mock_boto3: Any) -> RedshiftLoader:
         return RedshiftLoader(s3_bucket="test-bucket", s3_prefix="prefix", region="us-east-1")
 
@@ -177,7 +175,9 @@ class TestRedshiftLoader:
         cursor = loader.conn.cursor.return_value.__enter__.return_value
 
         # Mock Session
-        mock_boto3.Session.return_value.get_credentials.return_value.get_frozen_credentials.return_value.access_key = "AK"
+        mock_boto3.Session.return_value.get_credentials.return_value.get_frozen_credentials.return_value.access_key = (
+            "AK"
+        )
 
         csv_data = "id,name\n1,foo"
         stream = io.StringIO(csv_data)

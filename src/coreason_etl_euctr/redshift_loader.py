@@ -9,7 +9,6 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 import io
-import os
 import uuid
 from typing import IO, Any, List, Optional
 
@@ -34,7 +33,7 @@ class TextToBytesWrapper(io.RawIOBase):
     def readable(self) -> bool:
         return True
 
-    def readinto(self, b: bytearray) -> int:
+    def readinto(self, b: Any) -> int:
         if not self.buffer:
             # Read a chunk from text stream
             chunk = self.text_io.read(8192)
@@ -59,28 +58,31 @@ class ChainedStream(io.TextIOBase):
         self.pos = 0
 
     def read(self, size: int | None = -1) -> str:
+        # Resolve size to int
+        req_size: int = -1 if size is None else size
+
         if self.pos < len(self.first_chunk):
             available = len(self.first_chunk) - self.pos
 
-            if size is None or size < 0:
+            if req_size < 0:
                 # Read all
                 part1 = self.first_chunk[self.pos :]
                 self.pos = len(self.first_chunk)
                 return part1 + self.rest_stream.read()
 
             # Read up to size
-            to_read = min(size, available)
+            to_read = min(req_size, available)
             part1 = self.first_chunk[self.pos : self.pos + to_read]
             self.pos += to_read
 
-            if to_read == size:
+            if to_read == req_size:
                 return part1
 
             # We need more from rest_stream
-            remaining = size - to_read
+            remaining = req_size - to_read
             return part1 + self.rest_stream.read(remaining)
 
-        return self.rest_stream.read(size)
+        return self.rest_stream.read(req_size)
 
 
 class RedshiftLoader(BaseLoader):
@@ -226,8 +228,7 @@ class RedshiftLoader(BaseLoader):
             if creds:
                 frozen = creds.get_frozen_credentials()
                 creds_clause = (
-                    f"CREDENTIALS 'aws_access_key_id={frozen.access_key};"
-                    f"aws_secret_access_key={frozen.secret_key}"
+                    f"CREDENTIALS 'aws_access_key_id={frozen.access_key};" f"aws_secret_access_key={frozen.secret_key}"
                 )
                 if frozen.token:
                     creds_clause += f";token={frozen.token}"
@@ -353,7 +354,7 @@ class RedshiftLoader(BaseLoader):
                 # DELETE existing rows in target that are in staging
                 # USING clause in DELETE is supported in Redshift
                 # DELETE FROM target USING staging WHERE target.id = staging.id
-                pk_conditions = " AND ".join(f"{target_table}.\"{k}\" = {staging_table}.\"{k}\"" for k in conflict_keys)
+                pk_conditions = " AND ".join(f'{target_table}."{k}" = {staging_table}."{k}"' for k in conflict_keys)
                 delete_sql = f"DELETE FROM {target_table} USING {staging_table} WHERE {pk_conditions}"
                 cur.execute(delete_sql)
 

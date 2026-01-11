@@ -8,9 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from coreason_etl_euctr.main import main
 
@@ -19,7 +17,19 @@ class TestCLIRedshift:
     def test_load_redshift_args(self) -> None:
         """Verify that CLI args correctly instantiate RedshiftLoader."""
         with (
-            patch("sys.argv", ["main.py", "load", "--target-db", "redshift", "--s3-bucket", "my-bucket", "--iam-role", "arn:aws:iam::123:role/MyRole"]),
+            patch(
+                "sys.argv",
+                [
+                    "main.py",
+                    "load",
+                    "--target-db",
+                    "redshift",
+                    "--s3-bucket",
+                    "my-bucket",
+                    "--iam-role",
+                    "arn:aws:iam::123:role/MyRole",
+                ],
+            ),
             patch("coreason_etl_euctr.main.run_silver") as mock_run_silver,
             patch("coreason_etl_euctr.main.RedshiftLoader") as mock_loader_cls,
         ):
@@ -28,10 +38,7 @@ class TestCLIRedshift:
 
             # Verify Loader instantiation
             mock_loader_cls.assert_called_once_with(
-                s3_bucket="my-bucket",
-                s3_prefix="",
-                region=None,
-                iam_role="arn:aws:iam::123:role/MyRole"
+                s3_bucket="my-bucket", s3_prefix="", region=None, iam_role="arn:aws:iam::123:role/MyRole"
             )
 
             # Verify run_silver call
@@ -54,7 +61,7 @@ class TestCLIRedshift:
         """Verify default is Postgres."""
         with (
             patch("sys.argv", ["main.py", "load"]),
-            patch("coreason_etl_euctr.main.run_silver") as mock_run_silver,
+            patch("coreason_etl_euctr.main.run_silver"),
             patch("coreason_etl_euctr.main.PostgresLoader") as mock_pg_loader,
         ):
             ret = main()
