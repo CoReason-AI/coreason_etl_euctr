@@ -95,7 +95,12 @@ def test_cli_load_defaults() -> None:
     with patch("sys.argv", ["euctr-etl", "load"]), patch("coreason_etl_euctr.main.run_silver") as mock_run:
         ret = main()
         assert ret == 0
-        mock_run.assert_called_once_with(input_dir="data/bronze", mode="FULL", storage_backend=None)
+        # Check arguments but ignore loader instance equality
+        args, kwargs = mock_run.call_args
+        assert kwargs["input_dir"] == "data/bronze"
+        assert kwargs["mode"] == "FULL"
+        assert kwargs["storage_backend"] is None
+        assert kwargs["loader"] is not None
 
 
 def test_cli_load_custom_args() -> None:
@@ -109,7 +114,11 @@ def test_cli_load_custom_args() -> None:
     ):
         ret = main()
         assert ret == 0
-        mock_run.assert_called_once_with(input_dir="custom/bronze", mode="UPSERT", storage_backend=None)
+        args, kwargs = mock_run.call_args
+        assert kwargs["input_dir"] == "custom/bronze"
+        assert kwargs["mode"] == "UPSERT"
+        assert kwargs["storage_backend"] is None
+        assert kwargs["loader"] is not None
 
 
 def test_cli_help() -> None:
