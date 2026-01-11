@@ -149,7 +149,8 @@ class PostgresLoader(BaseLoader):
                     # Write rest of stream
                     while data := data_stream.read(8192):
                         copy.write(data)
-            logger.info(f"Bulk loaded data into {target_table}.")
+                row_count = cur.rowcount
+            logger.info(f"Bulk loaded {row_count} rows into {target_table}.")
         except psycopg.Error as e:
             logger.error(f"Bulk load failed for {target_table}: {e}")
             raise
@@ -249,11 +250,12 @@ class PostgresLoader(BaseLoader):
 
                 logger.debug(f"Executing Upsert on {target_table}...")
                 cur.execute(insert_sql)
+                row_count = cur.rowcount
 
                 # Temp table is ON COMMIT DROP, but we can drop it explicitly to save resources if transaction is long
                 cur.execute(f"DROP TABLE IF EXISTS {temp_table}")
 
-            logger.info(f"Upsert complete for {target_table}.")
+            logger.info(f"Upserted {row_count} rows into {target_table}.")
 
         except psycopg.Error as e:
             logger.error(f"Upsert failed for {target_table}: {e}")
