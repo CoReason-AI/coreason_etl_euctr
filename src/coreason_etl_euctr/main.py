@@ -20,6 +20,7 @@ from typing import Iterator, List, Optional, Sequence
 
 from pydantic import BaseModel
 
+from coreason_etl_euctr.bigquery_loader import BigQueryLoader
 from coreason_etl_euctr.crawler import Crawler
 from coreason_etl_euctr.downloader import Downloader
 from coreason_etl_euctr.loader import BaseLoader
@@ -413,11 +414,15 @@ def main() -> int:
     parser_load.add_argument("--mode", choices=["FULL", "UPSERT"], default="FULL", help="Loading mode")
     parser_load.add_argument(
         "--target-db",
-        choices=["postgres", "redshift"],
+        choices=["postgres", "redshift", "bigquery"],
         default="postgres",
         help="Target database (default: postgres)",
     )
     parser_load.add_argument("--iam-role", help="IAM Role ARN for Redshift COPY command")
+    parser_load.add_argument("--gcs-bucket", help="GCS Bucket for BigQuery Staging")
+    parser_load.add_argument("--gcs-prefix", help="GCS Prefix for BigQuery Staging")
+    parser_load.add_argument("--bq-project", help="BigQuery Project ID")
+    parser_load.add_argument("--bq-dataset", default="eu_ctr", help="BigQuery Dataset ID")
     _add_s3_args(parser_load)
 
     args = parser.parse_args()
@@ -453,6 +458,22 @@ def main() -> int:
                 s3_prefix=s3_prefix,
                 region=s3_region,
                 iam_role=args.iam_role,
+            )
+        elif args.target_db == "bigquery":
+            # BigQuery support
+            gcs_bucket = args.gcs_bucket or os.getenv("EUCTR_GCS_BUCKET")
+            if not gcs_bucket:
+                logger.error("BigQuery loader requires --gcs-bucket or EUCTR_GCS_BUCKET env var.")
+                return 1
+
+            gcs_prefix = args.gcs_prefix or os.getenv("EUCTR_GCS_PREFIX", "")
+            bq_project = args.bq_project or os.getenv("EUCTR_BQ_PROJECT")
+
+            loader = BigQueryLoader(
+                project_id=bq_project,
+                dataset_id=args.bq_dataset,
+                gcs_bucket=gcs_bucket,
+                gcs_prefix=str(gcs_prefix),
             )
         else:
             loader = PostgresLoader()
