@@ -12,7 +12,10 @@ authors = [
     { name = "Akshaya M", email = "akshaya.movvar@coreason.ai" },
 ]
 dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "httpx>=0.28.1",
     "loguru>=0.7.2",
+    "pydantic>=2.12.5",
 ]
 license = { file = "LICENSE" }
 classifiers = [
@@ -37,7 +40,9 @@ dev = [
     "mkdocstrings-python",
     "types-pyyaml>=6.0.12.20250915",
     "tzdata>=2025.3",
-    "pytest-xdist>=3.6.1"
+    "pytest-xdist>=3.6.1",
+    "respx>=0.22.0",
+    "pytest-mock>=3.15.1",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -58,6 +63,10 @@ target-version = "py314"
 [tool.ruff.lint]
 select = ["E", "F", "B", "I", "UP", "SIM", "RUF", "ARG", "C4", "PT", "TCH", "FA", "PIE", "RET", "PERF", "FURB", "LOG", "N", "A", "S"]
 ignore = ["S101", "TC001", "TC002", "TC003", "UP037"]
+
+[tool.deptry]
+pep621_dev_dependency_groups = ["dev"]
+ignore = ["DEP002"]
 
 [tool.mypy]
 python_version = "3.14"
