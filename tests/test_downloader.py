@@ -24,7 +24,7 @@ def downloader() -> EpistemicDownloaderTask:
     return EpistemicDownloaderTask(client=client, rate_limit=0)
 
 
-@respx.mock  # type: ignore[misc]
+@respx.mock
 def test_download_protocol_html_success(downloader: EpistemicDownloaderTask) -> None:
     eudract_id = "2020-000000-00"
 
@@ -44,7 +44,7 @@ def test_download_protocol_html_success(downloader: EpistemicDownloaderTask) -> 
         assert result[country] == f"<html>Protocol for {eudract_id} in {country}</html>"
 
 
-@respx.mock  # type: ignore[misc]
+@respx.mock
 def test_download_protocol_html_partial_404(downloader: EpistemicDownloaderTask) -> None:
     eudract_id = "2020-000000-00"
 
@@ -69,7 +69,7 @@ def test_download_protocol_html_partial_404(downloader: EpistemicDownloaderTask)
     assert "3rd" not in result
 
 
-@respx.mock  # type: ignore[misc]
+@respx.mock
 def test_download_protocol_html_all_404(downloader: EpistemicDownloaderTask) -> None:
     eudract_id = "2020-000000-00"
 
@@ -82,7 +82,7 @@ def test_download_protocol_html_all_404(downloader: EpistemicDownloaderTask) -> 
     assert len(result) == 0
 
 
-@respx.mock  # type: ignore[misc]
+@respx.mock
 def test_download_protocol_html_500_retry(downloader: EpistemicDownloaderTask) -> None:
     eudract_id = "2020-000000-00"
     url = f"{downloader.BASE_URL}/{eudract_id}/GB"
@@ -112,7 +112,7 @@ def test_download_protocol_html_500_retry(downloader: EpistemicDownloaderTask) -
     assert route.call_count == 3
 
 
-@respx.mock  # type: ignore[misc]
+@respx.mock
 def test_download_protocol_html_500_max_retries_exceeded(downloader: EpistemicDownloaderTask) -> None:
     eudract_id = "2020-000000-00"
     url = f"{downloader.BASE_URL}/{eudract_id}/GB"
@@ -135,7 +135,7 @@ def test_download_protocol_html_500_max_retries_exceeded(downloader: EpistemicDo
     assert route.call_count == 3
 
 
-@respx.mock  # type: ignore[misc]
+@respx.mock
 def test_download_protocol_html_rate_limiting() -> None:
     eudract_id = "2020-000000-00"
     client = httpx.Client()
