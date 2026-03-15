@@ -49,7 +49,7 @@ def test_extract_ids_from_html_no_sibling(harvester: EpistemicHarvesterTask) -> 
     assert ids == []
 
 
-@respx.mock  # type: ignore
+@respx.mock  # type: ignore[misc]
 def test_harvest_pagination(harvester: EpistemicHarvesterTask) -> None:
     # Page 1 mock
     respx.get("https://www.clinicaltrialsregister.eu/ctr-search/search?query=&page=1").respond(
@@ -72,7 +72,7 @@ def test_harvest_pagination(harvester: EpistemicHarvesterTask) -> None:
     assert result == ["2008-003174-18", "2010-022400-53"]
 
 
-@respx.mock  # type: ignore
+@respx.mock  # type: ignore[misc]
 def test_harvest_with_date_from(harvester: EpistemicHarvesterTask) -> None:
     respx.get("https://www.clinicaltrialsregister.eu/ctr-search/search?query=&page=1&dateFrom=2024-01-01").respond(
         status_code=200,
@@ -86,7 +86,7 @@ def test_harvest_with_date_from(harvester: EpistemicHarvesterTask) -> None:
     assert result == ["2006-001095-21"]
 
 
-@respx.mock  # type: ignore
+@respx.mock  # type: ignore[misc]
 def test_harvest_http_error(harvester: EpistemicHarvesterTask) -> None:
     respx.get("https://www.clinicaltrialsregister.eu/ctr-search/search?query=&page=1").respond(status_code=500)
 
@@ -95,7 +95,7 @@ def test_harvest_http_error(harvester: EpistemicHarvesterTask) -> None:
     assert result == []
 
 
-@respx.mock  # type: ignore
+@respx.mock  # type: ignore[misc]
 def test_harvest_max_pages_reached(harvester: EpistemicHarvesterTask) -> None:
     # Both page 1 and page 2 return results
     respx.get("https://www.clinicaltrialsregister.eu/ctr-search/search?query=&page=1").respond(
