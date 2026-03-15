@@ -36,7 +36,7 @@ class EpistemicDownloaderTask:
         self.client = client or httpx.Client()
         self.rate_limit = rate_limit
 
-    @retry(  # type: ignore[misc]
+    @retry(
         retry=retry_if_exception_type(httpx.HTTPError),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
