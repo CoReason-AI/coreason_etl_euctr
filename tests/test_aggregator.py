@@ -8,7 +8,11 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+import re
+
 import polars as pl
+from hypothesis import given
+from hypothesis import strategies as st
 
 from coreason_etl_euctr.aggregator import EpistemicGoldAggregatorTask
 
@@ -75,6 +79,10 @@ def test_aggregate_projection() -> None:
         "E.4",
         "E.5.1",
         "E.5.2",
+        "E.7.1",
+        "E.7.2",
+        "E.7.3",
+        "E.7.4",
         "coreason_id",
     ]
 
@@ -121,3 +129,73 @@ def test_aggregate_identity_resolution() -> None:
     assert df["coreason_id"][1] == expected_uuid_1  # deterministic check
     assert df["coreason_id"][2] == expected_uuid_2
     assert df["coreason_id"][3] is None  # missing source_id should result in null coreason_id
+
+
+def test_aggregate_trial_phases() -> None:
+    from typing import Any
+
+    aggregator = EpistemicGoldAggregatorTask()
+    silver_data: list[dict[str, Any]] = [
+        {
+            "A.2": "2020-000000-00",
+            "E.7.1": "Yes",
+            "E.7.2": "No",
+            "E.7.3": "yes ",
+            "E.7.4": " NO ",
+        },
+        {
+            "A.2": "2021-111111-11",
+            "E.7.1": "true",
+            "E.7.2": "False",
+            "E.7.3": "1",
+            "E.7.4": "0",
+        },
+        {
+            "A.2": "2022-222222-22",
+            "E.7.1": "unknown",
+            "E.7.2": None,
+        },
+    ]
+
+    df = aggregator.aggregate(silver_data)
+
+    assert df["E.7.1"][0] is True
+    assert df["E.7.2"][0] is False
+    assert df["E.7.3"][0] is True
+    assert df["E.7.4"][0] is False
+
+    assert df["E.7.1"][1] is True
+    assert df["E.7.2"][1] is False
+    assert df["E.7.3"][1] is True
+    assert df["E.7.4"][1] is False
+
+    assert df["E.7.1"][2] is None
+    assert df["E.7.2"][2] is None
+    assert df["E.7.3"][2] is None
+    assert df["E.7.4"][2] is None
+
+
+@given(  # type: ignore[misc]
+    e71=st.sampled_from(["yes", "Yes", "true", "TRUE", "1"]),
+    e72=st.sampled_from(["no", "NO", "false", "False", "0"]),
+    e73=st.text().filter(lambda x: not re.search(r"\b(yes|true|1|no|false|0)\b", x.lower())),
+    e74=st.none(),
+)
+def test_aggregate_trial_phases_hypothesis(e71: str, e72: str, e73: str, e74: str | None) -> None:
+    aggregator = EpistemicGoldAggregatorTask()
+    silver_data = [
+        {
+            "A.2": "2020-000000-00",
+            "E.7.1": e71,
+            "E.7.2": e72,
+            "E.7.3": e73,
+            "E.7.4": e74,
+        }
+    ]
+
+    df = aggregator.aggregate(silver_data)
+
+    assert df["E.7.1"][0] is True
+    assert df["E.7.2"][0] is False
+    assert df["E.7.3"][0] is None
+    assert df["E.7.4"][0] is None
