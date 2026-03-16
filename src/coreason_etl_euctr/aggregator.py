@@ -13,15 +13,37 @@ AGENT INSTRUCTION: This module defines the EpistemicGoldAggregatorTask to perfor
 high-performance transformations via Polars, implementing text cleaning and field projection.
 """
 
+import uuid
 from typing import Any
 
 import polars as pl
+
+NAMESPACE_EUCTR = uuid.uuid5(uuid.NAMESPACE_URL, "https://www.clinicaltrialsregister.eu")
 
 
 class EpistemicGoldAggregatorTask:
     """
     Manages the transformation of parsed Silver JSON into Gold Polars DataFrame.
     """
+
+    @staticmethod
+    def _generate_uuid5(expr: pl.Expr) -> pl.Expr:
+        """
+        Generates UUIDv5 sequence deterministically based on NAMESPACE_EUCTR.
+
+        Args:
+            expr: A Polars Expr containing strings (e.g., EudraCT Numbers).
+
+        Returns:
+            A Polars Expr containing the generated UUIDv5 strings.
+        """
+
+        def to_uuid5(val: str | None) -> str | None:
+            if not val:
+                return None
+            return str(uuid.uuid5(NAMESPACE_EUCTR, str(val)))
+
+        return expr.map_batches(lambda s: s.map_elements(to_uuid5, return_dtype=pl.Utf8))
 
     def clean_text(self, df: pl.DataFrame, cols: list[str]) -> pl.DataFrame:
         """
@@ -74,12 +96,22 @@ class EpistemicGoldAggregatorTask:
         projection = []
         for field in core_fields:
             if field in df.columns:
-                projection.append(pl.col(field))
+                if field == "A.2":
+                    projection.append(pl.col(field).alias("source_id"))
+                else:
+                    projection.append(pl.col(field))
             else:
-                projection.append(pl.lit(None).alias(field).cast(pl.Utf8))
+                if field == "A.2":
+                    projection.append(pl.lit(None).alias("source_id").cast(pl.Utf8))
+                else:
+                    projection.append(pl.lit(None).alias(field).cast(pl.Utf8))
 
         # Perform projection
         df_projected = df.select(projection)
 
-        # Clean text columns
-        return self.clean_text(df_projected, core_fields)
+        # Generate coreason_id using UUIDv5 on source_id
+        df_projected = df_projected.with_columns(pl.col("source_id").pipe(self._generate_uuid5).alias("coreason_id"))
+
+        # Clean text columns (note: A.2 is now source_id)
+        clean_fields = ["source_id"] + [f for f in core_fields if f != "A.2"]
+        return self.clean_text(df_projected, clean_fields)
