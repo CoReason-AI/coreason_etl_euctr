@@ -13,7 +13,8 @@ authors = [
 ]
 dependencies = [
     "beautifulsoup4>=4.14.3",
-    "dlt[postgres]>=1.23.0",
+    "dlt[postgres]>=1.23.0 ; python_version < '3.14'",
+    "dlt>=1.23.0 ; python_version >= '3.14'",
     "httpx>=0.28.1",
     "loguru>=0.7.2",
     "polars>=1.39.0",
