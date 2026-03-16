@@ -13,6 +13,7 @@ AGENT INSTRUCTION: This module defines the EpistemicGoldAggregatorTask to perfor
 high-performance transformations via Polars, implementing text cleaning and field projection.
 """
 
+import json
 import uuid
 from typing import Any
 
@@ -85,11 +86,34 @@ class EpistemicGoldAggregatorTask:
         if not silver_data:
             return pl.DataFrame()
 
+        # Pre-process silver_data to extract products array
+        processed_data = []
+        for row in silver_data:
+            new_row = dict(row)
+
+            # Extract products from D.IMP
+            products = []
+            if "D.IMP" in row and isinstance(row["D.IMP"], list):
+                for imp in row["D.IMP"]:
+                    if isinstance(imp, dict):
+                        product = {
+                            "D.2.1.1.1": imp.get("D.2.1.1.1"),
+                            "D.3.1": imp.get("D.3.1"),
+                            "D.3.8": imp.get("D.3.8"),
+                            "D.3.4": imp.get("D.3.4"),
+                        }
+                        # Only append if at least one field is not None
+                        if any(v is not None for v in product.values()):
+                            products.append(product)
+
+            new_row["products"] = json.dumps(products) if products else None
+            processed_data.append(new_row)
+
         # Base DataFrame
-        df = pl.DataFrame(silver_data)
+        df = pl.DataFrame(processed_data)
 
         # Fields to project
-        core_fields = ["A.2", "A.3", "B.1.1", "E.1.1.2", "E.2.1", "E.2.2", "E.3", "E.4", "E.5.1", "E.5.2"]
+        core_fields = ["A.2", "A.3", "B.1.1", "E.1.1.2", "E.2.1", "E.2.2", "E.3", "E.4", "E.5.1", "E.5.2", "products"]
         phase_fields = ["E.7.1", "E.7.2", "E.7.3", "E.7.4"]
 
         all_fields = core_fields + phase_fields

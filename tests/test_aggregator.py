@@ -79,6 +79,7 @@ def test_aggregate_projection() -> None:
         "E.4",
         "E.5.1",
         "E.5.2",
+        "products",
         "E.7.1",
         "E.7.2",
         "E.7.3",
@@ -199,3 +200,34 @@ def test_aggregate_trial_phases_hypothesis(e71: str, e72: str, e73: str, e74: st
     assert df["E.7.2"][0] is False
     assert df["E.7.3"][0] is None
     assert df["E.7.4"][0] is None
+
+
+def test_aggregate_imp_flattening() -> None:
+    import json
+    from typing import Any
+
+    aggregator = EpistemicGoldAggregatorTask()
+    silver_data: list[dict[str, Any]] = [
+        {
+            "A.2": "111",
+            "D.IMP": [
+                {"D.2.1.1.1": "TradeA", "D.3.1": "ProductA", "D.3.8": "SubstanceA", "D.3.4": "FormA"},
+                {"D.2.1.1.1": "TradeB", "D.3.4": "FormB"},
+                {"Other": "Ignored"},
+            ],
+        },
+        {"A.2": "222", "D.IMP": []},
+        {"A.2": "333"},
+    ]
+
+    df = aggregator.aggregate(silver_data)
+
+    assert len(df) == 3
+
+    prods_111 = json.loads(df["products"][0])
+    assert len(prods_111) == 2
+    assert prods_111[0] == {"D.2.1.1.1": "TradeA", "D.3.1": "ProductA", "D.3.8": "SubstanceA", "D.3.4": "FormA"}
+    assert prods_111[1] == {"D.2.1.1.1": "TradeB", "D.3.1": None, "D.3.8": None, "D.3.4": "FormB"}
+
+    assert df["products"][1] is None
+    assert df["products"][2] is None
