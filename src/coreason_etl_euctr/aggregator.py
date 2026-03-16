@@ -90,11 +90,14 @@ class EpistemicGoldAggregatorTask:
 
         # Fields to project
         core_fields = ["A.2", "A.3", "B.1.1", "E.1.1.2", "E.2.1", "E.2.2", "E.3", "E.4", "E.5.1", "E.5.2"]
+        phase_fields = ["E.7.1", "E.7.2", "E.7.3", "E.7.4"]
+
+        all_fields = core_fields + phase_fields
 
         # Select only required columns if they exist in the DataFrame,
         # otherwise create them with null values
         projection = []
-        for field in core_fields:
+        for field in all_fields:
             if field in df.columns:
                 if field == "A.2":
                     projection.append(pl.col(field).alias("source_id"))
@@ -114,4 +117,29 @@ class EpistemicGoldAggregatorTask:
 
         # Clean text columns (note: A.2 is now source_id)
         clean_fields = ["source_id"] + [f for f in core_fields if f != "A.2"]
-        return self.clean_text(df_projected, clean_fields)
+        df_projected = self.clean_text(df_projected, clean_fields)
+
+        # Flatten phase boolean flags for Phase I - IV
+        # According to the spec: "E.7.1 through E.7.4 - Trial Phase (Flattened boolean flags for Phase I - IV)"
+        for phase_field in phase_fields:
+            if df_projected.schema[phase_field] == pl.Utf8:
+                df_projected = df_projected.with_columns(
+                    pl.when(
+                        pl.col(phase_field).is_not_null()
+                        & pl.col(phase_field).str.to_lowercase().str.contains(r"\b(yes|true|1)\b")
+                    )
+                    .then(pl.lit(True))
+                    .when(
+                        pl.col(phase_field).is_not_null()
+                        & pl.col(phase_field).str.to_lowercase().str.contains(r"\b(no|false|0)\b")
+                    )
+                    .then(pl.lit(False))
+                    .otherwise(pl.lit(None))
+                    .cast(pl.Boolean)
+                    .alias(phase_field)
+                )
+            else:
+                # If the column is completely null, just cast it to Boolean
+                df_projected = df_projected.with_columns(pl.col(phase_field).cast(pl.Boolean).alias(phase_field))
+
+        return df_projected
