@@ -39,12 +39,36 @@ class EpistemicPipelineOrchestratorTask:
             auto_mode: If True, uses the Harvester to discover new IDs.
             ids_file: If provided, reads IDs from the specified file path.
         """
+        ids: list[str] = []
+
         if auto_mode:
             logger.info("Starting pipeline in AUTO mode.")
+            from coreason_etl_euctr.harvester import EpistemicHarvesterTask
+
+            harvester = EpistemicHarvesterTask()
+            ids = harvester.harvest()
         elif ids_file:
             logger.info(f"Starting pipeline in IDS_FILE mode using: {ids_file}")
+            try:
+                with open(ids_file) as f:
+                    # Read lines, strip whitespace, ignore empty lines and deduplicate while preserving order
+                    seen = set()
+                    for line in f:
+                        line = line.strip()
+                        if line and line not in seen:
+                            seen.add(line)
+                            ids.append(line)
+            except FileNotFoundError:
+                logger.error(f"File not found: {ids_file}")
+                return
+            except Exception as e:
+                logger.error(f"Error reading file {ids_file}: {e}")
+                return
         else:
             logger.warning("No execution mode specified. Exiting.")
+            return
+
+        logger.info(f"Discovered {len(ids)} EudraCT Numbers for processing.")
 
 
 def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
