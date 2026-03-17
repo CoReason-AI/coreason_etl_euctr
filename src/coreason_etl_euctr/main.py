@@ -8,9 +8,76 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
+"""
+AGENT INSTRUCTION: This module defines the EpistemicPipelineOrchestratorTask
+to coordinate the entire ETL pipeline from Harvester to Gold Aggregator.
+It also provides the CLI entry point for the application.
+"""
+
+import argparse
+import sys
+from collections.abc import Sequence
+
 from coreason_etl_euctr.utils.logger import logger
 
 
-def hello_world() -> str:
-    logger.info("Hello World!")
-    return "Hello World!"
+class EpistemicPipelineOrchestratorTask:
+    """
+    Coordinates the execution of the EU CTR ETL pipeline.
+    """
+
+    def __init__(self) -> None:
+        """
+        Initializes the Orchestrator.
+        """
+
+    def run(self, auto_mode: bool = False, ids_file: str | None = None) -> None:
+        """
+        Executes the ETL pipeline based on the provided mode.
+
+        Args:
+            auto_mode: If True, uses the Harvester to discover new IDs.
+            ids_file: If provided, reads IDs from the specified file path.
+        """
+        if auto_mode:
+            logger.info("Starting pipeline in AUTO mode.")
+        elif ids_file:
+            logger.info(f"Starting pipeline in IDS_FILE mode using: {ids_file}")
+        else:
+            logger.warning("No execution mode specified. Exiting.")
+
+
+def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
+    """
+    Parses command-line arguments.
+
+    Args:
+        args: Optional list of command-line arguments to parse. Defaults to sys.argv[1:].
+
+    Returns:
+        An argparse.Namespace containing the parsed arguments.
+    """
+    parser = argparse.ArgumentParser(description="EU CTR ETL Pipeline Orchestrator")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--auto", action="store_true", help="Run Harvester loop for new/updated trials.")
+    group.add_argument(
+        "--ids-file", type=str, metavar="PATH", help="Bypass Harvester and process specific IDs from file."
+    )
+
+    return parser.parse_args(args)
+
+
+def main(args: Sequence[str] | None = None) -> None:
+    """
+    CLI Entry point.
+
+    Args:
+        args: Optional list of command-line arguments.
+    """
+    parsed_args = parse_args(args)
+    orchestrator = EpistemicPipelineOrchestratorTask()
+    orchestrator.run(auto_mode=parsed_args.auto, ids_file=parsed_args.ids_file)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main(sys.argv[1:])

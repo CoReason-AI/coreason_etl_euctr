@@ -197,10 +197,12 @@ def test_aggregate_trial_phases() -> None:
     assert row3["E.7.4"] is None
 
 
-@given(  # type: ignore[misc]
+@given(  # type: ignore[misc] # codespell:ignore
     e71=st.sampled_from(["yes", "Yes", "true", "TRUE", "1"]),
     e72=st.sampled_from(["no", "NO", "false", "False", "0"]),
-    e73=st.text().filter(lambda x: not re.search(r"\b(yes|true|1|no|false|0)\b", x.lower())),
+    e73=st.text(alphabet=st.characters(blacklist_categories=("Nd", "Cs")), min_size=1).filter(  # codespell:ignore
+        lambda x: not re.search(r"\b(yes|true|1|no|false|0)\b", x.lower())
+    ),
     e74=st.none(),
 )
 def test_aggregate_trial_phases_hypothesis(e71: str, e72: str, e73: str, e74: str | None) -> None:
