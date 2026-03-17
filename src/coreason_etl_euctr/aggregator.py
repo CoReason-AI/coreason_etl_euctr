@@ -115,8 +115,11 @@ class EpistemicGoldAggregatorTask:
         # Fields to project
         core_fields = ["A.2", "A.3", "B.1.1", "E.1.1.2", "E.2.1", "E.2.2", "E.3", "E.4", "E.5.1", "E.5.2", "products"]
         phase_fields = ["E.7.1", "E.7.2", "E.7.3", "E.7.4"]
+        # The Trial Status is typically found under "National trial status" or similar in EU CTR
+        # Let's project it as trial_status_coalesced
+        status_field = "National trial status"
 
-        all_fields = core_fields + phase_fields
+        all_fields = core_fields + phase_fields + [status_field]
 
         # Select only required columns if they exist in the DataFrame,
         # otherwise create them with null values
@@ -125,11 +128,15 @@ class EpistemicGoldAggregatorTask:
             if field in df.columns:
                 if field == "A.2":
                     projection.append(pl.col(field).alias("source_id"))
+                elif field == status_field:
+                    projection.append(pl.col(field).alias("trial_status_coalesced"))
                 else:
                     projection.append(pl.col(field))
             else:
                 if field == "A.2":
                     projection.append(pl.lit(None).alias("source_id").cast(pl.Utf8))
+                elif field == status_field:
+                    projection.append(pl.lit(None).alias("trial_status_coalesced").cast(pl.Utf8))
                 else:
                     projection.append(pl.lit(None).alias(field).cast(pl.Utf8))
 
@@ -140,8 +147,31 @@ class EpistemicGoldAggregatorTask:
         df_projected = df_projected.with_columns(pl.col("source_id").pipe(self._generate_uuid5).alias("coreason_id"))
 
         # Clean text columns (note: A.2 is now source_id)
-        clean_fields = ["source_id"] + [f for f in core_fields if f != "A.2"]
+        clean_fields = ["source_id"] + [f for f in core_fields if f != "A.2"] + ["trial_status_coalesced"]
         df_projected = self.clean_text(df_projected, clean_fields)
+
+        # Group by coreason_id to merge localized states and coalesce
+        agg_exprs = []
+        for col in df_projected.columns:
+            if col not in ("coreason_id", "source_id"):
+                if col == "trial_status_coalesced":
+                    # Coalesce statuses into a single unique sorted list separated by commas, skipping nulls
+                    agg_exprs.append(pl.col(col).drop_nulls().unique().sort().str.join(", ").alias(col))
+                else:
+                    # Take the first non-null value for all other fields
+                    agg_exprs.append(pl.col(col).drop_nulls().first().alias(col))
+
+        if not df_projected.is_empty():
+            df_projected = df_projected.group_by(["coreason_id", "source_id"], maintain_order=True).agg(agg_exprs)
+
+        # Ensure trial_status_coalesced is null rather than empty string if no statuses exist
+        if "trial_status_coalesced" in df_projected.columns:
+            df_projected = df_projected.with_columns(
+                pl.when(pl.col("trial_status_coalesced") == "")
+                .then(pl.lit(None))
+                .otherwise(pl.col("trial_status_coalesced"))
+                .alias("trial_status_coalesced")
+            )
 
         # Flatten phase boolean flags for Phase I - IV
         # According to the spec: "E.7.1 through E.7.4 - Trial Phase (Flattened boolean flags for Phase I - IV)"
