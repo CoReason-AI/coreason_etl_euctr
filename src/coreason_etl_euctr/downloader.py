@@ -27,14 +27,18 @@ class EpistemicDownloaderTask:
     """
 
     BASE_URL = "https://www.clinicaltrialsregister.eu/ctr-search/trial"
-    TARGET_GEOGRAPHIES = ("GB", "DE", "BE", "3rd")
+    from coreason_etl_euctr.utils.config import settings
+
+    TARGET_GEOGRAPHIES = settings.target_geographies
 
     def __init__(self, client: httpx.Client | None = None, rate_limit: float = 1.0) -> None:
         """
         Initializes the Downloader task with an HTTP client and rate limiting configuration.
         """
         self.client = client or httpx.Client()
-        self.rate_limit = rate_limit
+        from coreason_etl_euctr.utils.config import settings
+
+        self.rate_limit = rate_limit if rate_limit != 1.0 else settings.rate_limit
 
     @retry(
         retry=retry_if_exception_type(httpx.HTTPError),

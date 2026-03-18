@@ -33,7 +33,9 @@ class EpistemicHarvesterTask:
         Initializes the Harvester task with an HTTP client and rate limiting configuration.
         """
         self.client = client or httpx.Client()
-        self.rate_limit = rate_limit
+        from coreason_etl_euctr.utils.config import settings
+
+        self.rate_limit = rate_limit if rate_limit != 1.0 else settings.rate_limit
 
     def extract_ids_from_html(self, html_content: str) -> list[str]:
         """

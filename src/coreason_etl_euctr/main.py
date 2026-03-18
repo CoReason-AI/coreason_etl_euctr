@@ -17,8 +17,11 @@ It also provides the CLI entry point for the application.
 import argparse
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
+from coreason_etl_euctr.utils.hashing import generate_deterministic_hash
 from coreason_etl_euctr.utils.logger import logger
+from coreason_etl_euctr.utils.state_manager import EpistemicStateManagerTask
 
 
 class EpistemicPipelineOrchestratorTask:
@@ -41,12 +44,21 @@ class EpistemicPipelineOrchestratorTask:
         """
         ids: list[str] = []
 
+        state_manager = EpistemicStateManagerTask()
         if auto_mode:
             logger.info("Starting pipeline in AUTO mode.")
             from coreason_etl_euctr.harvester import EpistemicHarvesterTask
 
             harvester = EpistemicHarvesterTask()
-            ids = harvester.harvest()
+            date_from = state_manager.last_run_timestamp
+
+            # Use only YYYY-MM-DD for dateFrom if a timestamp exists
+            date_from_str = None
+            if date_from:
+                date_from_str = date_from.split("T")[0]
+                logger.info(f"Using High-Water Mark: {date_from_str}")
+
+            ids = harvester.harvest(date_from=date_from_str)
         elif ids_file:
             logger.info(f"Starting pipeline in IDS_FILE mode using: {ids_file}")
             try:
@@ -93,14 +105,39 @@ class EpistemicPipelineOrchestratorTask:
                 logger.warning(f"No HTML downloaded for {eudract_id}, skipping to next ID.")
                 continue
 
+            # Transformation (Parse) & Idempotency Check
+            is_modified = False
+            parsed_documents = []
+
+            for country_code, html_content in downloaded_htmls.items():
+                parsed_data = parser.parse_html(html_content)
+                parsed_data["A.2"] = eudract_id  # Ensure source_id is always available
+                parsed_documents.append(parsed_data)
+
+                # Check idempotency per document
+                current_hash = generate_deterministic_hash(parsed_data)
+
+                # We track idempotency using a combined key for eudract_id + country_code
+                state_key = f"{eudract_id}_{country_code}"
+                previous_hash = state_manager.get_hash(state_key)
+
+                if current_hash != previous_hash:
+                    is_modified = True
+                    state_manager.update_hash(state_key, current_hash)
+                else:
+                    logger.debug(f"Hash match for {eudract_id} in {country_code}, skipping downstream...")
+
+            if not is_modified:
+                logger.info(
+                    f"No modifications detected for {eudract_id} across any geography. Skipping Bronze & Gold load."
+                )
+                continue
+
             # Bronze Layer Ingestion
             bronze_loader.load_html_blobs(eudract_id, downloaded_htmls)
 
-            # Transformation (Parse)
-            for html_content in downloaded_htmls.values():
-                parsed_data = parser.parse_html(html_content)
-                parsed_data["A.2"] = eudract_id  # Ensure source_id is always available
-                silver_data.append(parsed_data)
+            # Add to Silver data
+            silver_data.extend(parsed_documents)
 
         if silver_data:
             # Gold Layer Aggregation
@@ -112,6 +149,12 @@ class EpistemicPipelineOrchestratorTask:
             gold_loader.load_gold_dataframe(gold_df, write_disposition="merge")
         else:
             logger.warning("No Silver data collected, skipping Gold Layer Aggregation and Loading.")
+
+        # Update last run timestamp upon successful completion
+        if auto_mode:
+            current_time = datetime.now(UTC).isoformat()
+            state_manager.last_run_timestamp = current_time
+            logger.info(f"Updated High-Water Mark to: {current_time}")
 
 
 def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
