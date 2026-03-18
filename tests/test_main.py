@@ -44,9 +44,13 @@ def test_orchestrator_auto_mode(
 
     mock_aggregator_class = mocker.patch("coreason_etl_euctr.aggregator.EpistemicGoldAggregatorTask")
     mock_aggregator_instance = mock_aggregator_class.return_value
-    mock_aggregator_instance.aggregate.return_value = "mock_polars_df"
+    import polars as pl
 
-    mocker.patch("coreason_etl_euctr.gold_loader.EpistemicGoldLoaderTask")
+    mock_aggregator_instance.aggregate.return_value = pl.DataFrame({"test": [1]})
+
+    mock_gold_loader_class = mocker.patch("coreason_etl_euctr.main.EpistemicGoldLoaderTask")
+    mock_gold_loader_instance = mock_gold_loader_class.return_value
+    mock_gold_loader_instance.load_gold_dataframe.return_value = None
 
     orchestrator = EpistemicPipelineOrchestratorTask()
     orchestrator.run(auto_mode=True)
@@ -83,7 +87,9 @@ def test_orchestrator_run_ids_file(mocker: MockerFixture, tmp_path: pytest.TempP
     mock_aggregator_instance = mock_aggregator_class.return_value
     mock_aggregator_instance.aggregate.return_value = "mock_polars_df"
 
-    mocker.patch("coreason_etl_euctr.gold_loader.EpistemicGoldLoaderTask")
+    mock_gold_loader_class = mocker.patch("coreason_etl_euctr.gold_loader.EpistemicGoldLoaderTask")
+    mock_gold_loader_instance = mock_gold_loader_class.return_value
+    mock_gold_loader_instance.load_gold_dataframe.return_value = None
 
     file_path = tmp_path / "test_ids.txt"  # type: ignore[operator]
     file_path.write_text("ID_1\nID_2\nID_1\n \nID_3\n")

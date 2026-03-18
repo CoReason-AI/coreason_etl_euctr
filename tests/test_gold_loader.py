@@ -92,21 +92,25 @@ class TestEpistemicGoldLoaderTask:
         validated_records = gold_loader.validate_dataframe(df)
 
         assert len(validated_records) == 1
-        assert validated_records[0]["coreason_id"] == valid_gold_data["coreason_id"]
-        assert validated_records[0]["A.3"] == valid_gold_data["A.3"]
+        assert validated_records["coreason_id"][0] == valid_gold_data["coreason_id"]
+        assert validated_records["A.3"][0] == valid_gold_data["A.3"]
 
     def test_validate_dataframe_partial_failure(
         self, gold_loader: EpistemicGoldLoaderTask, valid_gold_data: dict[str, str | bool | None]
     ) -> None:
         """Test validation where one row is valid and another is invalid (missing required)."""
-        invalid_data = {"A.3": "Invalid Row Missing IDs"}
+        # Ensure schema matches so pl.DataFrame can parse them together
+        invalid_data = valid_gold_data.copy()
+        invalid_data["coreason_id"] = None
+        invalid_data["A.3"] = "Invalid Row Missing IDs"
+
         df = pl.DataFrame([valid_gold_data, invalid_data])
 
         validated_records = gold_loader.validate_dataframe(df)
 
         # Only the valid row should be returned
         assert len(validated_records) == 1
-        assert validated_records[0]["coreason_id"] == valid_gold_data["coreason_id"]
+        assert validated_records["coreason_id"][0] == valid_gold_data["coreason_id"]
 
     def test_validate_dataframe_empty(self, gold_loader: EpistemicGoldLoaderTask) -> None:
         """Test validation of an empty DataFrame."""
@@ -159,10 +163,15 @@ class TestEpistemicGoldLoaderTask:
 
     @patch("dlt.pipeline")
     def test_load_gold_dataframe_all_invalid(
-        self, mock_dlt_pipeline: MagicMock, gold_loader: EpistemicGoldLoaderTask
+        self,
+        mock_dlt_pipeline: MagicMock,
+        gold_loader: EpistemicGoldLoaderTask,
+        valid_gold_data: dict[str, str | bool | None],
     ) -> None:
         """Test loading a DataFrame where all rows are invalid returns None."""
-        invalid_data = {"A.3": "Invalid"}
+        invalid_data = valid_gold_data.copy()
+        invalid_data["coreason_id"] = None
+        invalid_data["A.3"] = "Invalid"
         df = pl.DataFrame([invalid_data])
         result = gold_loader.load_gold_dataframe(df)
 

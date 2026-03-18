@@ -71,7 +71,7 @@ class EpistemicGoldLoaderTask:
         self.destination = destination
         self.dataset_name = dataset_name
 
-    def validate_dataframe(self, df: pl.DataFrame) -> list[dict[str, Any]]:
+    def validate_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
         """
         Validates the Polars DataFrame against the EpistemicGoldManifest boundary contract.
 
@@ -79,27 +79,34 @@ class EpistemicGoldLoaderTask:
             df: The Polars DataFrame to validate.
 
         Returns:
-            A list of validated dictionaries ready for insertion.
+            A new Polars DataFrame containing only the validated rows.
         """
         if df.is_empty():
-            return []
+            return df
 
         # Convert Polars DataFrame to a list of dicts for Pydantic validation
         records = df.to_dicts()
-        validated_records: list[dict[str, Any]] = []
+        valid_indices: list[int] = []
 
-        for record in records:
+        for i, record in enumerate(records):
             try:
                 # Pydantic will validate the dictionary against the defined schema aliases
-                manifest = EpistemicGoldManifest.model_validate(record)
-                # Dump by alias to preserve the dotted keys (e.g., A.3) for downstream dlt schemas
-                validated_records.append(manifest.model_dump(by_alias=True))
+                EpistemicGoldManifest.model_validate(record)
+                valid_indices.append(i)
             except Exception as e:
                 # Log the validation error as a warning and skip the invalid row,
                 # ensuring the pipeline is resilient against malformed edge cases.
                 logger.warning(f"Data validation failed for record {record.get('source_id', 'UNKNOWN')}: {e}")
 
-        return validated_records
+        # Return a DataFrame with only the validated rows
+        # Maintain order using gather, or create a boolean mask
+        if not valid_indices:
+            return pl.DataFrame(schema=df.schema)
+
+        # Build a boolean mask to filter valid rows
+        valid_set = set(valid_indices)
+        mask = [i in valid_set for i in range(df.height)]
+        return df.filter(pl.Series(mask))
 
     def load_gold_dataframe(
         self, df: pl.DataFrame, write_disposition: Any = "merge"
@@ -119,9 +126,9 @@ class EpistemicGoldLoaderTask:
             return None
 
         logger.info(f"Validating {len(df)} rows against EpistemicGoldManifest.")
-        validated_data = self.validate_dataframe(df)
+        validated_df = self.validate_dataframe(df)
 
-        if not validated_data:
+        if validated_df.is_empty():
             logger.warning("No rows passed validation; skipping Gold load.")
             return None
 
@@ -132,13 +139,14 @@ class EpistemicGoldLoaderTask:
         )
 
         logger.info(
-            f"Loading {len(validated_data)} validated rows into Gold layer (gold_euctr_rag) "
+            f"Loading {len(validated_df)} validated rows into Gold layer (gold_euctr_rag) "
             f"with mode: {write_disposition}."
         )
 
         # We define coreason_id as the primary key for merges
+        # To satisfy R.5.2.1, we must pass the Polars DataFrame natively to `pipeline.run`.
         load_info = pipeline.run(
-            validated_data,
+            validated_df,
             table_name="gold_euctr_rag",
             write_disposition=write_disposition,
             primary_key="coreason_id" if write_disposition == "merge" else None,
