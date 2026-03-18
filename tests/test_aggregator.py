@@ -13,6 +13,7 @@ import re
 import polars as pl
 from hypothesis import given
 from hypothesis import strategies as st
+from pytest_mock import MockerFixture
 
 from coreason_etl_euctr.aggregator import EpistemicGoldAggregatorTask
 
@@ -279,3 +280,19 @@ def test_aggregate_trial_status_coalescing() -> None:
 
     row2 = df.filter(pl.col("source_id") == "456").row(0, named=True)
     assert row2["trial_status_coalesced"] is None
+
+
+def test_aggregate_logs_warning_for_missing_fields(mocker: MockerFixture) -> None:
+    mock_logger_warning = mocker.patch("coreason_etl_euctr.aggregator.logger.warning")
+    aggregator = EpistemicGoldAggregatorTask()
+
+    silver_data = [
+        {"A.2": "2020-000000-00", "A.3": "Test", "E.3": "Criteria"},  # Missing E.4
+        {"A.2": "2021-111111-11", "E.4": "Exclusion"},  # Missing E.3
+    ]
+
+    aggregator.aggregate(silver_data)
+
+    mock_logger_warning.assert_any_call("Data mapping quality issue: Section E.4 missing for 2020-000000-00")
+    mock_logger_warning.assert_any_call("Data mapping quality issue: Section E.3 missing for 2021-111111-11")
+    assert mock_logger_warning.call_count == 2
