@@ -14,7 +14,7 @@ the ingestion of flattened Polars DataFrames into the Gold layer via dlt.
 It also provides the EpistemicGoldManifest for strict Pydantic validation.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 import dlt
 import polars as pl
@@ -102,7 +102,7 @@ class EpistemicGoldLoaderTask:
         return validated_records
 
     def load_gold_dataframe(
-        self, df: pl.DataFrame, write_disposition: str = "merge"
+        self, df: pl.DataFrame, write_disposition: Literal["replace", "append", "merge"] = "merge"
     ) -> dlt.common.pipeline.LoadInfo | None:
         """
         Validates and loads the Gold Polars DataFrame into the final analytical repository via dlt.
@@ -141,7 +141,7 @@ class EpistemicGoldLoaderTask:
             validated_data,
             table_name="gold_euctr_rag",
             write_disposition=write_disposition,
-            primary_key="coreason_id" if write_disposition == "merge" else None,
+            primary_key="coreason_id" if write_disposition == "merge" else (),
         )
 
         logger.info("Successfully loaded Gold layer.")
