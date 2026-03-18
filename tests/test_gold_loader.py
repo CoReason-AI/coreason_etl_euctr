@@ -187,12 +187,12 @@ class TestEpistemicGoldLoaderTask:
 
         call_args = mock_pipeline_instance.run.call_args[1]
         assert call_args["write_disposition"] == "replace"
-        assert call_args["primary_key"] is None
+        assert call_args["primary_key"] == ()
 
 
 # Use Hypothesis for property-based testing of edge case inputs
-@settings(max_examples=50)  # type: ignore
-@given(st.text(min_size=1), st.text(min_size=1), st.one_of(st.none(), st.text()), st.one_of(st.none(), st.booleans()))  # type: ignore
+@settings(max_examples=50)
+@given(st.text(min_size=1), st.text(min_size=1), st.one_of(st.none(), st.text()), st.one_of(st.none(), st.booleans()))
 def test_manifest_property_based(coreason_id: str, source_id: str, a3_val: str | None, phase_val: bool | None) -> None:
     """Property-based test to ensure varying inputs are accepted when valid."""
     data = {
