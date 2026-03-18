@@ -70,6 +70,49 @@ class EpistemicPipelineOrchestratorTask:
 
         logger.info(f"Discovered {len(ids)} EudraCT Numbers for processing.")
 
+        from coreason_etl_euctr.aggregator import EpistemicGoldAggregatorTask
+        from coreason_etl_euctr.bronze_loader import EpistemicBronzeLoaderTask
+        from coreason_etl_euctr.downloader import EpistemicDownloaderTask
+        from coreason_etl_euctr.gold_loader import EpistemicGoldLoaderTask
+        from coreason_etl_euctr.parser import EpistemicParserTask
+
+        downloader = EpistemicDownloaderTask()
+        bronze_loader = EpistemicBronzeLoaderTask()
+        parser = EpistemicParserTask()
+        aggregator = EpistemicGoldAggregatorTask()
+        gold_loader = EpistemicGoldLoaderTask()
+
+        silver_data = []
+
+        for eudract_id in ids:
+            logger.info(f"Processing {eudract_id}")
+            # Step B: Download HTML
+            downloaded_htmls = downloader.download_protocol_html(eudract_id)
+
+            if not downloaded_htmls:
+                logger.warning(f"No HTML downloaded for {eudract_id}, skipping to next ID.")
+                continue
+
+            # Bronze Layer Ingestion
+            bronze_loader.load_html_blobs(eudract_id, downloaded_htmls)
+
+            # Transformation (Parse)
+            for html_content in downloaded_htmls.values():
+                parsed_data = parser.parse_html(html_content)
+                parsed_data["A.2"] = eudract_id  # Ensure source_id is always available
+                silver_data.append(parsed_data)
+
+        if silver_data:
+            # Gold Layer Aggregation
+            logger.info("Aggregating Silver data into Gold Polars DataFrame.")
+            gold_df = aggregator.aggregate(silver_data)
+
+            # Gold Layer Loading
+            logger.info("Loading Gold DataFrame via dlt.")
+            gold_loader.load_gold_dataframe(gold_df, write_disposition="merge")
+        else:
+            logger.warning("No Silver data collected, skipping Gold Layer Aggregation and Loading.")
+
 
 def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
     """
