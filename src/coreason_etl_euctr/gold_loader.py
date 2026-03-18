@@ -102,7 +102,7 @@ class EpistemicGoldLoaderTask:
         return validated_records
 
     def load_gold_dataframe(
-        self, df: pl.DataFrame, write_disposition: str = "merge"
+        self, df: pl.DataFrame, write_disposition: Any = "merge"
     ) -> dlt.common.pipeline.LoadInfo | None:
         """
         Validates and loads the Gold Polars DataFrame into the final analytical repository via dlt.

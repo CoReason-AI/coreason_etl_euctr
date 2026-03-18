@@ -19,6 +19,8 @@ from typing import Any
 
 import polars as pl
 
+from coreason_etl_euctr.utils.logger import logger
+
 NAMESPACE_EUCTR = uuid.uuid5(uuid.NAMESPACE_URL, "https://www.clinicaltrialsregister.eu")
 
 
@@ -112,8 +114,16 @@ class EpistemicGoldAggregatorTask:
         # Base DataFrame
         df = pl.DataFrame(processed_data)
 
-        # Fields to project
         core_fields = ["A.2", "A.3", "B.1.1", "E.1.1.2", "E.2.1", "E.2.2", "E.3", "E.4", "E.5.1", "E.5.2", "products"]
+
+        # Check for missing critical RAG fields
+        critical_rag_fields = ["E.3", "E.4"]
+        for row in silver_data:
+            source_id = row.get("A.2", "UNKNOWN_ID")
+            for field in critical_rag_fields:
+                if field not in row or row[field] is None or str(row[field]).strip() == "":
+                    logger.warning(f"Data mapping quality issue: Section {field} missing for {source_id}")
+
         phase_fields = ["E.7.1", "E.7.2", "E.7.3", "E.7.4"]
         # The Trial Status is typically found under "National trial status" or similar in EU CTR
         # Let's project it as trial_status_coalesced
