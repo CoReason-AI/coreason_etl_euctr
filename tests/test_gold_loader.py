@@ -207,7 +207,10 @@ class TestEpistemicGoldLoaderTask:
 
     @patch("dlt.pipeline")
     def test_load_gold_dataframe_unexpected_type_error(
-        self, mock_dlt_pipeline: MagicMock, gold_loader: EpistemicGoldLoaderTask, valid_gold_data: dict[str, str | bool | None]
+        self,
+        mock_dlt_pipeline: MagicMock,
+        gold_loader: EpistemicGoldLoaderTask,
+        valid_gold_data: dict[str, str | bool | None],
     ) -> None:
         """Test that unexpected TypeErrors are reraised."""
         mock_pipeline_instance = MagicMock()
@@ -220,10 +223,9 @@ class TestEpistemicGoldLoaderTask:
             gold_loader.load_gold_dataframe(df)
 
 
-
 # Use Hypothesis for property-based testing of edge case inputs
-@settings(max_examples=50)
-@given(st.text(min_size=1), st.text(min_size=1), st.one_of(st.none(), st.text()), st.one_of(st.none(), st.booleans()))
+@settings(max_examples=50)  # type: ignore[misc]
+@given(st.text(min_size=1), st.text(min_size=1), st.one_of(st.none(), st.text()), st.one_of(st.none(), st.booleans()))  # type: ignore[misc]
 def test_manifest_property_based(coreason_id: str, source_id: str, a3_val: str | None, phase_val: bool | None) -> None:
     """Property-based test to ensure varying inputs are accepted when valid."""
     data = {

@@ -138,7 +138,7 @@ class EpistemicGoldLoaderTask:
         # This keeps Polars strictly for memory-efficient projection and logic, handing off cleanly.
         try:
             load_info = pipeline.run(df.to_dicts(), **run_kwargs)
-        except TypeError as e:
+        except TypeError:
             raise
 
         logger.info("Successfully loaded Gold layer.")
