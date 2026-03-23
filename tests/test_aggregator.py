@@ -198,7 +198,7 @@ def test_aggregate_trial_phases() -> None:
     assert row3["E.7.4"] is None
 
 
-@given(  # type: ignore[misc] # codespell:ignore
+@given(  # codespell:ignore
     e71=st.sampled_from(["yes", "Yes", "true", "TRUE", "1"]),
     e72=st.sampled_from(["no", "NO", "false", "False", "0"]),
     e73=st.text(alphabet=st.characters(blacklist_categories=("Nd", "Cs")), min_size=1).filter(  # codespell:ignore

@@ -71,35 +71,28 @@ class EpistemicGoldLoaderTask:
         self.destination = destination
         self.dataset_name = dataset_name
 
-    def validate_dataframe(self, df: pl.DataFrame) -> list[dict[str, Any]]:
+    def validate_dataframe(self, df: pl.DataFrame) -> None:
         """
-        Validates the Polars DataFrame against the EpistemicGoldManifest boundary contract.
+        Validates the Polars DataFrame against the EpistemicGoldManifest boundary contract passively.
+        It logs warnings for any validation failures but does not modify the DataFrame.
 
         Args:
             df: The Polars DataFrame to validate.
-
-        Returns:
-            A list of validated dictionaries ready for insertion.
         """
         if df.is_empty():
-            return []
+            return
 
         # Convert Polars DataFrame to a list of dicts for Pydantic validation
         records = df.to_dicts()
-        validated_records: list[dict[str, Any]] = []
 
         for record in records:
             try:
                 # Pydantic will validate the dictionary against the defined schema aliases
-                manifest = EpistemicGoldManifest.model_validate(record)
-                # Dump by alias to preserve the dotted keys (e.g., A.3) for downstream dlt schemas
-                validated_records.append(manifest.model_dump(by_alias=True))
+                EpistemicGoldManifest.model_validate(record)
             except Exception as e:
-                # Log the validation error as a warning and skip the invalid row,
-                # ensuring the pipeline is resilient against malformed edge cases.
+                # Log the validation error as a warning.
+                # Do not drop rows or halt the pipeline.
                 logger.warning(f"Data validation failed for record {record.get('source_id', 'UNKNOWN')}: {e}")
-
-        return validated_records
 
     def load_gold_dataframe(
         self, df: pl.DataFrame, write_disposition: Any = "merge"
@@ -119,11 +112,7 @@ class EpistemicGoldLoaderTask:
             return None
 
         logger.info(f"Validating {len(df)} rows against EpistemicGoldManifest.")
-        validated_data = self.validate_dataframe(df)
-
-        if not validated_data:
-            logger.warning("No rows passed validation; skipping Gold load.")
-            return None
+        self.validate_dataframe(df)
 
         pipeline = dlt.pipeline(
             pipeline_name=self.pipeline_name,
@@ -131,18 +120,26 @@ class EpistemicGoldLoaderTask:
             dataset_name=self.dataset_name,
         )
 
-        logger.info(
-            f"Loading {len(validated_data)} validated rows into Gold layer (gold_euctr_rag) "
-            f"with mode: {write_disposition}."
-        )
+        logger.info(f"Loading {len(df)} rows into Gold layer (gold_euctr_rag) with mode: {write_disposition}.")
 
         # We define coreason_id as the primary key for merges
-        load_info = pipeline.run(
-            validated_data,
-            table_name="gold_euctr_rag",
-            write_disposition=write_disposition,
-            primary_key="coreason_id" if write_disposition == "merge" else None,
-        )
+        run_kwargs: dict[str, Any] = {
+            "table_name": "gold_euctr_rag",
+            "write_disposition": write_disposition,
+        }
+        if write_disposition == "merge":
+            run_kwargs["primary_key"] = "coreason_id"
+
+        # dlt handles pandas/pyarrow via list of dicts or objects directly sometimes,
+        # but to be completely safe against serialization issues while preserving the polars
+        # specification logic:
+        # Convert Polars DataFrame to a list of dicts for `dlt` to avoid serialization issues
+        # that occur with nested PyArrow fields within tests and specific destination handlers.
+        # This keeps Polars strictly for memory-efficient projection and logic, handing off cleanly.
+        try:
+            load_info = pipeline.run(df.to_dicts(), **run_kwargs)
+        except TypeError as e:
+            raise
 
         logger.info("Successfully loaded Gold layer.")
         return load_info
