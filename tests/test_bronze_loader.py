@@ -49,7 +49,7 @@ def test_bronze_loader_load_html_blobs(mocker: MockerFixture) -> None:
     ]
     mock_pipeline_instance.run.assert_called_once_with(
         expected_data_to_load,
-        table_name="raw_html_blobs",
+        table_name="coreason_etl_euctr_bronze_html_blobs",
         write_disposition="append",
     )
 
@@ -99,7 +99,7 @@ def test_bronze_loader_read_all_html_blobs_success(mocker: MockerFixture) -> Non
 
     mock_duckdb_connect.assert_called_once_with("test_read_pipeline.duckdb", read_only=True)
     mock_conn.execute.assert_called_once_with(
-        "SELECT eudract_id, country_code, raw_html FROM test_bronze.raw_html_blobs"
+        "SELECT eudract_id, country_code, raw_html FROM test_bronze.coreason_etl_euctr_bronze_html_blobs"
     )
 
     assert len(result) == 2

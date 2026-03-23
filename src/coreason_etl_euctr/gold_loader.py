@@ -62,7 +62,7 @@ class EpistemicGoldLoaderTask:
     """
 
     def __init__(
-        self, pipeline_name: str = "euctr_gold_pipeline", destination: str = "duckdb", dataset_name: str = "gold"
+        self, pipeline_name: str = "coreason_etl_euctr", destination: str = "duckdb", dataset_name: str = "gold"
     ) -> None:
         """
         Initializes the Gold Loader task with dlt pipeline configuration.
@@ -120,11 +120,14 @@ class EpistemicGoldLoaderTask:
             dataset_name=self.dataset_name,
         )
 
-        logger.info(f"Loading {len(df)} rows into Gold layer (gold_euctr_rag) with mode: {write_disposition}.")
+        logger.info(
+            f"Loading {len(df)} rows into Gold layer (coreason_etl_euctr_gold_euctr_rag) "
+            f"with mode: {write_disposition}."
+        )
 
         # We define coreason_id as the primary key for merges
         run_kwargs: dict[str, Any] = {
-            "table_name": "gold_euctr_rag",
+            "table_name": "coreason_etl_euctr_gold_euctr_rag",
             "write_disposition": write_disposition,
         }
         if write_disposition == "merge":

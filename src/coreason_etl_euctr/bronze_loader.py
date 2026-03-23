@@ -27,7 +27,7 @@ class EpistemicBronzeLoaderTask:
     """
 
     def __init__(
-        self, pipeline_name: str = "euctr_bronze_pipeline", destination: str = "duckdb", dataset_name: str = "bronze"
+        self, pipeline_name: str = "coreason_etl_euctr", destination: str = "duckdb", dataset_name: str = "bronze"
     ) -> None:
         """
         Initializes the Bronze Loader task with dlt pipeline configuration.
@@ -78,7 +78,7 @@ class EpistemicBronzeLoaderTask:
 
         load_info = pipeline.run(
             data_to_load,
-            table_name="raw_html_blobs",
+            table_name="coreason_etl_euctr_bronze_html_blobs",
             write_disposition="append",
         )
 
@@ -106,9 +106,8 @@ class EpistemicBronzeLoaderTask:
             # Connect to the local duckdb database created by dlt
             with duckdb.connect(db_path, read_only=True) as conn:
                 # Dlt creates schema based on dataset_name, so table is usually dataset_name.table_name
-                # E.g., bronze.raw_html_blobs
                 # We use string formatting because table names cannot be parameterized in DuckDB
-                query = f"SELECT eudract_id, country_code, raw_html FROM {self.dataset_name}.raw_html_blobs"  # noqa: S608
+                query = f"SELECT eudract_id, country_code, raw_html FROM {self.dataset_name}.coreason_etl_euctr_bronze_html_blobs"  # noqa: E501, S608
 
                 cursor = conn.execute(query)
                 rows = cursor.fetchall()

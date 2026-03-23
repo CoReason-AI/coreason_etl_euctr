@@ -146,7 +146,7 @@ class TestEpistemicGoldLoaderTask:
         positional_args = mock_pipeline_instance.run.call_args[0]
         call_args = mock_pipeline_instance.run.call_args[1]
 
-        assert call_args["table_name"] == "gold_euctr_rag"
+        assert call_args["table_name"] == "coreason_etl_euctr_gold_euctr_rag"
         assert call_args["write_disposition"] == "merge"
         assert call_args["primary_key"] == "coreason_id"
         assert positional_args[0] == df.to_dicts()
