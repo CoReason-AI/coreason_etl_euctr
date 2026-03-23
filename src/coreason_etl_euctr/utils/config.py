@@ -17,7 +17,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class EpistemicConfigurationManifest(BaseSettings):  # type: ignore[misc]
+class EpistemicConfigurationManifest(BaseSettings):
     """
     Mathematical boundary contract representing the system configuration.
     It isolates environment variables from business logic.
