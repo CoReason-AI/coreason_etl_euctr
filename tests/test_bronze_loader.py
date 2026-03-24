@@ -49,7 +49,7 @@ def test_bronze_loader_load_html_blobs(mocker: MockerFixture) -> None:
     ]
     mock_pipeline_instance.run.assert_called_once_with(
         expected_data_to_load,
-        table_name="raw_html_blobs",
+        table_name="coreason_etl_euctr_bronze_html_blobs",
         write_disposition="append",
     )
 
@@ -73,3 +73,82 @@ def test_bronze_loader_empty_html_blobs(mocker: MockerFixture) -> None:
     mock_pipeline_instance.run.assert_called_once_with([])
 
     assert load_info == mock_load_info
+
+
+def test_bronze_loader_read_all_html_blobs_success(mocker: MockerFixture) -> None:
+    loader = EpistemicBronzeLoaderTask(
+        pipeline_name="test_read_pipeline", destination="duckdb", dataset_name="test_bronze"
+    )
+
+    mock_duckdb_connect = mocker.patch("duckdb.connect")
+    mock_conn = mocker.MagicMock()
+    mock_cursor = mocker.MagicMock()
+
+    # Setup context manager
+    mock_duckdb_connect.return_value.__enter__.return_value = mock_conn
+    mock_conn.execute.return_value = mock_cursor
+
+    # Mock data returned from database
+    mock_cursor.fetchall.return_value = [
+        ("ID-1", "GB", "<html>GB 1</html>"),
+        ("ID-1", "DE", "<html>DE 1</html>"),
+        ("ID-2", "GB", "<html>GB 2</html>"),
+    ]
+
+    result = loader.read_all_html_blobs()
+
+    mock_duckdb_connect.assert_called_once_with("test_read_pipeline.duckdb", read_only=True)
+    mock_conn.execute.assert_called_once_with(
+        "SELECT eudract_id, country_code, raw_html FROM test_bronze.coreason_etl_euctr_bronze_html_blobs"
+    )
+
+    assert len(result) == 2
+    assert "ID-1" in result
+    assert "ID-2" in result
+    assert result["ID-1"]["GB"] == "<html>GB 1</html>"
+    assert result["ID-1"]["DE"] == "<html>DE 1</html>"
+    assert result["ID-2"]["GB"] == "<html>GB 2</html>"
+
+
+def test_bronze_loader_read_all_html_blobs_not_duckdb(mocker: MockerFixture) -> None:
+    loader = EpistemicBronzeLoaderTask(destination="postgres")
+
+    mock_logger_error = mocker.patch("coreason_etl_euctr.bronze_loader.logger.error")
+
+    result = loader.read_all_html_blobs()
+
+    assert result == {}
+    mock_logger_error.assert_called_once()
+    assert "only implemented for duckdb destination" in mock_logger_error.call_args[0][0]
+
+
+def test_bronze_loader_read_all_html_blobs_duckdb_error(mocker: MockerFixture) -> None:
+    import duckdb
+
+    loader = EpistemicBronzeLoaderTask()
+
+    mock_duckdb_connect = mocker.patch("duckdb.connect")
+    mock_duckdb_connect.side_effect = duckdb.Error("Database file not found")
+
+    mock_logger_error = mocker.patch("coreason_etl_euctr.bronze_loader.logger.error")
+
+    result = loader.read_all_html_blobs()
+
+    assert result == {}
+    mock_logger_error.assert_called_once()
+    assert "DuckDB error" in mock_logger_error.call_args[0][0]
+
+
+def test_bronze_loader_read_all_html_blobs_general_error(mocker: MockerFixture) -> None:
+    loader = EpistemicBronzeLoaderTask()
+
+    mock_duckdb_connect = mocker.patch("duckdb.connect")
+    mock_duckdb_connect.side_effect = Exception("Some general error")
+
+    mock_logger_error = mocker.patch("coreason_etl_euctr.bronze_loader.logger.error")
+
+    result = loader.read_all_html_blobs()
+
+    assert result == {}
+    mock_logger_error.assert_called_once()
+    assert "Unexpected error" in mock_logger_error.call_args[0][0]

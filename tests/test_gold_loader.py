@@ -84,35 +84,40 @@ class TestEpistemicGoldLoaderTask:
     def gold_loader(self) -> EpistemicGoldLoaderTask:
         return EpistemicGoldLoaderTask(pipeline_name="test_pipeline", destination="duckdb", dataset_name="test_gold")
 
+    @patch("coreason_etl_euctr.gold_loader.logger.warning")
     def test_validate_dataframe_success(
-        self, gold_loader: EpistemicGoldLoaderTask, valid_gold_data: dict[str, str | bool | None]
+        self,
+        mock_logger_warning: MagicMock,
+        gold_loader: EpistemicGoldLoaderTask,
+        valid_gold_data: dict[str, str | bool | None],
     ) -> None:
         """Test validation of a valid Polars DataFrame."""
         df = pl.DataFrame([valid_gold_data])
-        validated_records = gold_loader.validate_dataframe(df)
+        gold_loader.validate_dataframe(df)
+        mock_logger_warning.assert_not_called()
 
-        assert len(validated_records) == 1
-        assert validated_records[0]["coreason_id"] == valid_gold_data["coreason_id"]
-        assert validated_records[0]["A.3"] == valid_gold_data["A.3"]
-
+    @patch("coreason_etl_euctr.gold_loader.logger.warning")
     def test_validate_dataframe_partial_failure(
-        self, gold_loader: EpistemicGoldLoaderTask, valid_gold_data: dict[str, str | bool | None]
+        self,
+        mock_logger_warning: MagicMock,
+        gold_loader: EpistemicGoldLoaderTask,
+        valid_gold_data: dict[str, str | bool | None],
     ) -> None:
         """Test validation where one row is valid and another is invalid (missing required)."""
         invalid_data = {"A.3": "Invalid Row Missing IDs"}
         df = pl.DataFrame([valid_gold_data, invalid_data])
 
-        validated_records = gold_loader.validate_dataframe(df)
+        gold_loader.validate_dataframe(df)
 
-        # Only the valid row should be returned
-        assert len(validated_records) == 1
-        assert validated_records[0]["coreason_id"] == valid_gold_data["coreason_id"]
+        # Logger warning should be called once for the invalid row
+        assert mock_logger_warning.call_count == 1
+        assert "Data validation failed for record None" in mock_logger_warning.call_args[0][0]
 
     def test_validate_dataframe_empty(self, gold_loader: EpistemicGoldLoaderTask) -> None:
         """Test validation of an empty DataFrame."""
         df = pl.DataFrame()
-        validated_records = gold_loader.validate_dataframe(df)
-        assert len(validated_records) == 0
+        # Should not raise or do anything
+        gold_loader.validate_dataframe(df)
 
     @patch("dlt.pipeline")
     def test_load_gold_dataframe_success(
@@ -141,10 +146,10 @@ class TestEpistemicGoldLoaderTask:
         positional_args = mock_pipeline_instance.run.call_args[0]
         call_args = mock_pipeline_instance.run.call_args[1]
 
-        assert call_args["table_name"] == "gold_euctr_rag"
+        assert call_args["table_name"] == "coreason_etl_euctr_gold_euctr_rag"
         assert call_args["write_disposition"] == "merge"
         assert call_args["primary_key"] == "coreason_id"
-        assert len(positional_args[0]) == 1
+        assert positional_args[0] == df.to_dicts()
 
     @patch("dlt.pipeline")
     def test_load_gold_dataframe_empty_dataframe(
@@ -158,16 +163,27 @@ class TestEpistemicGoldLoaderTask:
         mock_dlt_pipeline.assert_not_called()
 
     @patch("dlt.pipeline")
+    @patch("coreason_etl_euctr.gold_loader.logger.warning")
     def test_load_gold_dataframe_all_invalid(
-        self, mock_dlt_pipeline: MagicMock, gold_loader: EpistemicGoldLoaderTask
+        self, mock_logger_warning: MagicMock, mock_dlt_pipeline: MagicMock, gold_loader: EpistemicGoldLoaderTask
     ) -> None:
-        """Test loading a DataFrame where all rows are invalid returns None."""
+        """Test loading a DataFrame where all rows are invalid logs warnings but attempts dlt."""
         invalid_data = {"A.3": "Invalid"}
         df = pl.DataFrame([invalid_data])
+
+        mock_pipeline_instance = MagicMock()
+        mock_load_info = MagicMock()
+        mock_pipeline_instance.run.return_value = mock_load_info
+        mock_dlt_pipeline.return_value = mock_pipeline_instance
+
         result = gold_loader.load_gold_dataframe(df)
 
-        assert result is None
-        mock_dlt_pipeline.assert_not_called()
+        assert result == mock_load_info
+        assert mock_logger_warning.call_count == 1
+        mock_dlt_pipeline.assert_called_once()
+        mock_pipeline_instance.run.assert_called_once()
+        positional_args = mock_pipeline_instance.run.call_args[0]
+        assert positional_args[0] == df.to_dicts()
 
     @patch("dlt.pipeline")
     def test_load_gold_dataframe_replace_mode(
@@ -187,7 +203,24 @@ class TestEpistemicGoldLoaderTask:
 
         call_args = mock_pipeline_instance.run.call_args[1]
         assert call_args["write_disposition"] == "replace"
-        assert call_args["primary_key"] is None
+        assert "primary_key" not in call_args
+
+    @patch("dlt.pipeline")
+    def test_load_gold_dataframe_unexpected_type_error(
+        self,
+        mock_dlt_pipeline: MagicMock,
+        gold_loader: EpistemicGoldLoaderTask,
+        valid_gold_data: dict[str, str | bool | None],
+    ) -> None:
+        """Test that unexpected TypeErrors are reraised."""
+        mock_pipeline_instance = MagicMock()
+        mock_pipeline_instance.run.side_effect = TypeError("Some other type error")
+        mock_dlt_pipeline.return_value = mock_pipeline_instance
+
+        df = pl.DataFrame([valid_gold_data])
+
+        with pytest.raises(TypeError, match="Some other type error"):
+            gold_loader.load_gold_dataframe(df)
 
 
 # Use Hypothesis for property-based testing of edge case inputs
