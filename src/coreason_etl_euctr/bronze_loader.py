@@ -16,6 +16,7 @@ the ingestion of raw HTML blobs into the Bronze layer using dlt.
 from typing import Any
 
 import dlt
+import duckdb
 
 from coreason_etl_euctr.utils.logger import logger
 
@@ -26,7 +27,7 @@ class EpistemicBronzeLoaderTask:
     """
 
     def __init__(
-        self, pipeline_name: str = "euctr_bronze_pipeline", destination: str = "duckdb", dataset_name: str = "bronze"
+        self, pipeline_name: str = "coreason_etl_euctr", destination: str = "duckdb", dataset_name: str = "bronze"
     ) -> None:
         """
         Initializes the Bronze Loader task with dlt pipeline configuration.
@@ -77,9 +78,54 @@ class EpistemicBronzeLoaderTask:
 
         load_info = pipeline.run(
             data_to_load,
-            table_name="raw_html_blobs",
+            table_name="coreason_etl_euctr_bronze_html_blobs",
             write_disposition="append",
         )
 
         logger.info(f"Successfully loaded Bronze layer for {eudract_id}")
         return load_info
+
+    def read_all_html_blobs(self) -> dict[str, dict[str, str]]:
+        """
+        Reads all HTML blobs from the Bronze layer using a native DuckDB connection.
+
+        Returns:
+            A dictionary mapping `eudract_id` to a dictionary of `{country_code: raw_html}`.
+        """
+        if self.destination != "duckdb":
+            logger.error(
+                f"read_all_html_blobs is currently only implemented for duckdb destination, not {self.destination}"
+            )
+            return {}
+
+        db_path = f"{self.pipeline_name}.duckdb"
+        logger.info(f"Reading all HTML blobs from Bronze DuckDB: {db_path}")
+
+        result: dict[str, dict[str, str]] = {}
+        try:
+            # Connect to the local duckdb database created by dlt
+            with duckdb.connect(db_path, read_only=True) as conn:
+                # Dlt creates schema based on dataset_name, so table is usually dataset_name.table_name
+                # We use string formatting because table names cannot be parameterized in DuckDB
+                query = f"SELECT eudract_id, country_code, raw_html FROM {self.dataset_name}.coreason_etl_euctr_bronze_html_blobs"  # noqa: E501, S608
+
+                cursor = conn.execute(query)
+                rows = cursor.fetchall()
+
+                for row in rows:
+                    eudract_id = row[0]
+                    country_code = row[1]
+                    raw_html = row[2]
+
+                    if eudract_id not in result:
+                        result[eudract_id] = {}
+
+                    result[eudract_id][country_code] = raw_html
+
+            logger.info(f"Successfully read {len(result)} trials from Bronze layer.")
+        except duckdb.Error as e:
+            logger.error(f"DuckDB error while reading from Bronze layer: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error while reading from Bronze layer: {e}")
+
+        return result

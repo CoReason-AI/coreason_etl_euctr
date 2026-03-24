@@ -14,6 +14,7 @@ authors = [
 dependencies = [
     "beautifulsoup4>=4.14.3",
     "dlt[duckdb,postgres]>=1.23.0",
+    "duckdb>=1.5.0",
     "httpx>=0.28.1",
     "loguru>=0.7.2",
     "polars>=1.39.0",
@@ -78,6 +79,7 @@ python_version = "3.14"
 strict = true
 disallow_untyped_defs = true
 warn_unused_ignores = true
+disable_error_code = ["unused-ignore"]
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]

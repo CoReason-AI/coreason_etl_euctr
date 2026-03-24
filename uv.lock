@@ -128,6 +128,7 @@ source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "dlt", extra = ["duckdb", "postgres"] },
+    { name = "duckdb" },
     { name = "httpx" },
     { name = "loguru" },
     { name = "polars" },
@@ -163,6 +164,7 @@ dev = [
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.14.3" },
     { name = "dlt", extras = ["duckdb", "postgres"], specifier = ">=1.23.0" },
+    { name = "duckdb", specifier = ">=1.5.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "loguru", specifier = ">=0.7.2" },
     { name = "polars", specifier = ">=1.39.0" },

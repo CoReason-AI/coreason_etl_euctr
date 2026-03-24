@@ -36,7 +36,10 @@ def test_orchestrator_auto_mode(
     mock_downloader_instance = mock_downloader_class.return_value
     mock_downloader_instance.download_protocol_html.return_value = {"GB": "<html>GB1</html>"}
 
-    mocker.patch("coreason_etl_euctr.bronze_loader.EpistemicBronzeLoaderTask")
+    mock_bronze_loader_class = mocker.patch("coreason_etl_euctr.bronze_loader.EpistemicBronzeLoaderTask")
+    mock_bronze_loader_instance = mock_bronze_loader_class.return_value
+    mock_bronze_loader_instance.load_html_blobs.return_value = None
+    mock_bronze_loader_instance.read_all_html_blobs.return_value = {}
 
     mock_parser_class = mocker.patch("coreason_etl_euctr.parser.EpistemicParserTask")
     mock_parser_instance = mock_parser_class.return_value
@@ -46,7 +49,14 @@ def test_orchestrator_auto_mode(
     mock_aggregator_instance = mock_aggregator_class.return_value
     mock_aggregator_instance.aggregate.return_value = "mock_polars_df"
 
-    mocker.patch("coreason_etl_euctr.gold_loader.EpistemicGoldLoaderTask")
+    mock_gold_loader_class = mocker.patch("coreason_etl_euctr.gold_loader.EpistemicGoldLoaderTask")
+    mock_gold_loader_instance = mock_gold_loader_class.return_value
+    mock_gold_loader_instance.load_gold_dataframe.return_value = None
+
+    # Explicitly globally mock dlt
+    mocker.patch("coreason_etl_euctr.bronze_loader.dlt.pipeline")
+    mocker.patch("coreason_etl_euctr.gold_loader.dlt.pipeline")
+    mocker.patch("dlt.pipeline")
 
     orchestrator = EpistemicPipelineOrchestratorTask()
     orchestrator.run(auto_mode=True)
@@ -74,6 +84,8 @@ def test_orchestrator_run_ids_file(mocker: MockerFixture, tmp_path: pytest.TempP
 
     mock_bronze_loader_class = mocker.patch("coreason_etl_euctr.bronze_loader.EpistemicBronzeLoaderTask")
     mock_bronze_loader_instance = mock_bronze_loader_class.return_value
+    mock_bronze_loader_instance.load_html_blobs.return_value = None
+    mock_bronze_loader_instance.read_all_html_blobs.return_value = {}
 
     mock_parser_class = mocker.patch("coreason_etl_euctr.parser.EpistemicParserTask")
     mock_parser_instance = mock_parser_class.return_value
@@ -137,12 +149,21 @@ def test_parse_args_auto() -> None:
     args = parse_args(["--auto"])
     assert args.auto is True
     assert args.ids_file is None
+    assert args.full is False
 
 
 def test_parse_args_ids_file() -> None:
     args = parse_args(["--ids-file", "test.txt"])
     assert args.auto is False
     assert args.ids_file == "test.txt"
+    assert args.full is False
+
+
+def test_parse_args_full() -> None:
+    args = parse_args(["--full"])
+    assert args.auto is False
+    assert args.ids_file is None
+    assert args.full is True
 
 
 def test_main_auto(mocker: MockerFixture) -> None:
@@ -151,7 +172,7 @@ def test_main_auto(mocker: MockerFixture) -> None:
 
     main(["--auto"])
 
-    mock_instance.run.assert_called_once_with(auto_mode=True, ids_file=None)
+    mock_instance.run.assert_called_once_with(auto_mode=True, ids_file=None, full_mode=False)
 
 
 def test_main_ids_file(mocker: MockerFixture) -> None:
@@ -160,7 +181,88 @@ def test_main_ids_file(mocker: MockerFixture) -> None:
 
     main(["--ids-file", "test.txt"])
 
-    mock_instance.run.assert_called_once_with(auto_mode=False, ids_file="test.txt")
+    mock_instance.run.assert_called_once_with(auto_mode=False, ids_file="test.txt", full_mode=False)
+
+
+def test_main_full(mocker: MockerFixture) -> None:
+    mock_orchestrator_class = mocker.patch("coreason_etl_euctr.main.EpistemicPipelineOrchestratorTask")
+    mock_instance = mock_orchestrator_class.return_value
+
+    main(["--full"])
+
+    mock_instance.run.assert_called_once_with(auto_mode=False, ids_file=None, full_mode=True)
+
+
+def test_orchestrator_run_full_mode(mocker: MockerFixture) -> None:
+    mock_logger_info = mocker.patch("coreason_etl_euctr.main.logger.info")
+
+    mock_bronze_loader_class = mocker.patch("coreason_etl_euctr.bronze_loader.EpistemicBronzeLoaderTask")
+    mock_bronze_loader_instance = mock_bronze_loader_class.return_value
+    mock_bronze_loader_instance.read_all_html_blobs.return_value = {
+        "ID_1": {"GB": "<html>GB1</html>"},
+        "ID_2": {"DE": "<html>DE2</html>"},
+    }
+
+    mock_parser_class = mocker.patch("coreason_etl_euctr.parser.EpistemicParserTask")
+    mock_parser_instance = mock_parser_class.return_value
+    mock_parser_instance.parse_html.return_value = {"parsed": "data"}
+
+    mock_aggregator_class = mocker.patch("coreason_etl_euctr.aggregator.EpistemicGoldAggregatorTask")
+    mock_aggregator_instance = mock_aggregator_class.return_value
+    mock_aggregator_instance.aggregate.return_value = "mock_polars_df"
+
+    mock_gold_loader_class = mocker.patch("coreason_etl_euctr.gold_loader.EpistemicGoldLoaderTask")
+    mock_gold_loader_instance = mock_gold_loader_class.return_value
+    mock_gold_loader_instance.load_gold_dataframe.return_value = None
+
+    mocker.patch("coreason_etl_euctr.bronze_loader.dlt.pipeline")
+    mocker.patch("coreason_etl_euctr.gold_loader.dlt.pipeline")
+    mocker.patch("dlt.pipeline")
+
+    orchestrator = EpistemicPipelineOrchestratorTask()
+    orchestrator.run(full_mode=True)
+
+    mock_logger_info.assert_any_call("Starting pipeline in FULL mode. Reprocessing all existing Bronze data.")
+    mock_bronze_loader_instance.read_all_html_blobs.assert_called_once()
+    assert mock_parser_instance.parse_html.call_count == 2
+    mock_aggregator_instance.aggregate.assert_called_once()
+    mock_gold_loader_instance.load_gold_dataframe.assert_called_once_with("mock_polars_df", write_disposition="replace")
+
+
+def test_orchestrator_run_full_mode_no_bronze_data(mocker: MockerFixture) -> None:
+    mock_logger_warning = mocker.patch("coreason_etl_euctr.main.logger.warning")
+
+    mock_bronze_loader_class = mocker.patch("coreason_etl_euctr.bronze_loader.EpistemicBronzeLoaderTask")
+    mock_bronze_loader_instance = mock_bronze_loader_class.return_value
+    mock_bronze_loader_instance.read_all_html_blobs.return_value = {}
+
+    mocker.patch("coreason_etl_euctr.bronze_loader.dlt.pipeline")
+    mocker.patch("coreason_etl_euctr.gold_loader.dlt.pipeline")
+    mocker.patch("dlt.pipeline")
+
+    orchestrator = EpistemicPipelineOrchestratorTask()
+    orchestrator.run(full_mode=True)
+
+    mock_logger_warning.assert_called_once_with("No HTML blobs found in Bronze layer to reprocess.")
+
+
+def test_orchestrator_run_full_mode_no_silver_data(mocker: MockerFixture) -> None:
+    mock_logger_warning = mocker.patch("coreason_etl_euctr.main.logger.warning")
+
+    mock_bronze_loader_class = mocker.patch("coreason_etl_euctr.bronze_loader.EpistemicBronzeLoaderTask")
+    mock_bronze_loader_instance = mock_bronze_loader_class.return_value
+    mock_bronze_loader_instance.read_all_html_blobs.return_value = {
+        "ID_1": {},
+    }
+
+    mocker.patch("coreason_etl_euctr.bronze_loader.dlt.pipeline")
+    mocker.patch("coreason_etl_euctr.gold_loader.dlt.pipeline")
+    mocker.patch("dlt.pipeline")
+
+    orchestrator = EpistemicPipelineOrchestratorTask()
+    orchestrator.run(full_mode=True)
+
+    mock_logger_warning.assert_called_with("No Silver data generated from Bronze layer.")
 
 
 def test_idempotency_skip(mocker: MockerFixture) -> None:
@@ -177,10 +279,25 @@ def test_idempotency_skip(mocker: MockerFixture) -> None:
 
     mock_bronze_loader_class = mocker.patch("coreason_etl_euctr.bronze_loader.EpistemicBronzeLoaderTask")
     mock_bronze_loader_instance = mock_bronze_loader_class.return_value
+    mock_bronze_loader_instance.load_html_blobs.return_value = None
+    mock_bronze_loader_instance.read_all_html_blobs.return_value = {}
 
     mock_parser_class = mocker.patch("coreason_etl_euctr.parser.EpistemicParserTask")
     mock_parser_instance = mock_parser_class.return_value
     mock_parser_instance.parse_html.return_value = {"parsed": "data"}
+
+    mock_aggregator_class = mocker.patch("coreason_etl_euctr.aggregator.EpistemicGoldAggregatorTask")
+    mock_aggregator_instance = mock_aggregator_class.return_value
+    mock_aggregator_instance.aggregate.return_value = "mock_polars_df"
+
+    mock_gold_loader_class = mocker.patch("coreason_etl_euctr.gold_loader.EpistemicGoldLoaderTask")
+    mock_gold_loader_instance = mock_gold_loader_class.return_value
+    mock_gold_loader_instance.load_gold_dataframe.return_value = None
+
+    # Avoid serializing Polars DFs into dlt
+    mocker.patch("coreason_etl_euctr.bronze_loader.dlt.pipeline")
+    mocker.patch("coreason_etl_euctr.gold_loader.dlt.pipeline")
+    mocker.patch("dlt.pipeline")
 
     # Mock file read to return 1 ID
     original_open = open

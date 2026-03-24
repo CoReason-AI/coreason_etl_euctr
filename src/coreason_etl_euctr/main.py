@@ -34,17 +34,59 @@ class EpistemicPipelineOrchestratorTask:
         Initializes the Orchestrator.
         """
 
-    def run(self, auto_mode: bool = False, ids_file: str | None = None) -> None:
+    def run(self, auto_mode: bool = False, ids_file: str | None = None, full_mode: bool = False) -> None:
         """
         Executes the ETL pipeline based on the provided mode.
 
         Args:
             auto_mode: If True, uses the Harvester to discover new IDs.
             ids_file: If provided, reads IDs from the specified file path.
+            full_mode: If True, bypasses download and reprocesses all existing Bronze HTML blobs.
         """
         ids: list[str] = []
 
+        from coreason_etl_euctr.aggregator import EpistemicGoldAggregatorTask
+        from coreason_etl_euctr.bronze_loader import EpistemicBronzeLoaderTask
+        from coreason_etl_euctr.downloader import EpistemicDownloaderTask
+        from coreason_etl_euctr.gold_loader import EpistemicGoldLoaderTask
+        from coreason_etl_euctr.parser import EpistemicParserTask
+
+        bronze_loader = EpistemicBronzeLoaderTask()
+        parser = EpistemicParserTask()
+        aggregator = EpistemicGoldAggregatorTask()
+        gold_loader = EpistemicGoldLoaderTask()
+
         state_manager = EpistemicStateManagerTask()
+
+        silver_data = []
+
+        if full_mode:
+            logger.info("Starting pipeline in FULL mode. Reprocessing all existing Bronze data.")
+            all_blobs = bronze_loader.read_all_html_blobs()
+
+            if not all_blobs:
+                logger.warning("No HTML blobs found in Bronze layer to reprocess.")
+                return
+
+            for eudract_id, downloaded_htmls in all_blobs.items():
+                logger.info(f"Reprocessing {eudract_id}")
+                for html_content in downloaded_htmls.values():
+                    parsed_data = parser.parse_html(html_content)
+                    parsed_data["A.2"] = eudract_id
+                    silver_data.append(parsed_data)
+
+            if silver_data:
+                logger.info("Aggregating Silver data into Gold Polars DataFrame.")
+                gold_df = aggregator.aggregate(silver_data)
+                logger.info("Loading Gold DataFrame via dlt in REPLACE mode.")
+                gold_loader.load_gold_dataframe(gold_df, write_disposition="replace")
+            else:
+                logger.warning("No Silver data generated from Bronze layer.")
+
+            # Full mode completes here
+            return
+
+        # Regular incremental processing
         if auto_mode:
             logger.info("Starting pipeline in AUTO mode.")
             from coreason_etl_euctr.harvester import EpistemicHarvesterTask
@@ -82,19 +124,7 @@ class EpistemicPipelineOrchestratorTask:
 
         logger.info(f"Discovered {len(ids)} EudraCT Numbers for processing.")
 
-        from coreason_etl_euctr.aggregator import EpistemicGoldAggregatorTask
-        from coreason_etl_euctr.bronze_loader import EpistemicBronzeLoaderTask
-        from coreason_etl_euctr.downloader import EpistemicDownloaderTask
-        from coreason_etl_euctr.gold_loader import EpistemicGoldLoaderTask
-        from coreason_etl_euctr.parser import EpistemicParserTask
-
         downloader = EpistemicDownloaderTask()
-        bronze_loader = EpistemicBronzeLoaderTask()
-        parser = EpistemicParserTask()
-        aggregator = EpistemicGoldAggregatorTask()
-        gold_loader = EpistemicGoldLoaderTask()
-
-        silver_data = []
 
         for eudract_id in ids:
             logger.info(f"Processing {eudract_id}")
@@ -145,7 +175,7 @@ class EpistemicPipelineOrchestratorTask:
             gold_df = aggregator.aggregate(silver_data)
 
             # Gold Layer Loading
-            logger.info("Loading Gold DataFrame via dlt.")
+            logger.info("Loading Gold DataFrame via dlt in MERGE mode.")
             gold_loader.load_gold_dataframe(gold_df, write_disposition="merge")
         else:
             logger.warning("No Silver data collected, skipping Gold Layer Aggregation and Loading.")
@@ -173,6 +203,9 @@ def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
     group.add_argument(
         "--ids-file", type=str, metavar="PATH", help="Bypass Harvester and process specific IDs from file."
     )
+    group.add_argument(
+        "--full", action="store_true", help="Reprocess all existing Bronze HTML blobs into Silver/Gold layers."
+    )
 
     return parser.parse_args(args)
 
@@ -186,7 +219,11 @@ def main(args: Sequence[str] | None = None) -> None:
     """
     parsed_args = parse_args(args)
     orchestrator = EpistemicPipelineOrchestratorTask()
-    orchestrator.run(auto_mode=parsed_args.auto, ids_file=parsed_args.ids_file)
+    orchestrator.run(
+        auto_mode=parsed_args.auto,
+        ids_file=parsed_args.ids_file,
+        full_mode=parsed_args.full,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
