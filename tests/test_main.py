@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
 
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from pytest_mock import MockerFixture
@@ -17,13 +17,12 @@ from pytest_mock import MockerFixture
 from coreason_etl_euctr.main import EpistemicPipelineOrchestratorTask, main, parse_args
 
 
-@patch("coreason_etl_euctr.main.generate_deterministic_hash", return_value="new_hash")
-@patch("coreason_etl_euctr.main.EpistemicStateManagerTask")
-@patch("coreason_etl_euctr.harvester.EpistemicHarvesterTask")
-def test_orchestrator_auto_mode(
-    mock_harvester: MagicMock, mock_state_manager: MagicMock, mocker: MockerFixture
-) -> None:
+def test_orchestrator_auto_mode(mocker: MockerFixture) -> None:
     mocker.patch("coreason_etl_euctr.main.logger.warning")
+    mocker.patch("coreason_etl_euctr.main.generate_deterministic_hash", return_value="new_hash")
+
+    mock_state_manager = mocker.patch("coreason_etl_euctr.main.EpistemicStateManagerTask")
+    mock_harvester = mocker.patch("coreason_etl_euctr.harvester.EpistemicHarvesterTask")
 
     mock_state_instance = mock_state_manager.return_value
     mock_state_instance.last_run_timestamp = "2024-01-01T12:00:00Z"
