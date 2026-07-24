@@ -1,0 +1,209 @@
+# Copyright (c) 2026 CoReason, Inc.
+#
+# This software is proprietary and dual-licensed.
+# Licensed under the Prosperity Public License 3.0 (the "License").
+# A copy of the license is available at https://prosperitylicense.com/versions/3.0.0
+# For details, see the LICENSE file.
+# Commercial use beyond a 30-day trial requires a separate license.
+#
+# Source Code: https://github.com/CoReason-AI/coreason_etl_euctr
+
+"""
+AGENT INSTRUCTION: This module defines the EpistemicGoldAggregatorTask to perform
+high-performance transformations via Polars, implementing text cleaning and field projection.
+"""
+
+import json
+import uuid
+from typing import Any
+
+import polars as pl
+
+from coreason_etl_euctr.utils.logger import logger
+
+NAMESPACE_EUCTR = uuid.uuid5(uuid.NAMESPACE_URL, "https://www.clinicaltrialsregister.eu")
+
+
+class EpistemicGoldAggregatorTask:
+    """
+    Manages the transformation of parsed Silver JSON into Gold Polars DataFrame.
+    """
+
+    @staticmethod
+    def _generate_uuid5(expr: pl.Expr) -> pl.Expr:
+        """
+        Generates UUIDv5 sequence deterministically based on NAMESPACE_EUCTR.
+
+        Args:
+            expr: A Polars Expr containing strings (e.g., EudraCT Numbers).
+
+        Returns:
+            A Polars Expr containing the generated UUIDv5 strings.
+        """
+
+        def to_uuid5(val: str | None) -> str | None:
+            if not val:
+                return None
+            return str(uuid.uuid5(NAMESPACE_EUCTR, str(val)))
+
+        return expr.map_batches(lambda s: s.map_elements(to_uuid5, return_dtype=pl.Utf8))
+
+    def clean_text(self, df: pl.DataFrame, cols: list[str]) -> pl.DataFrame:
+        """
+        Cleans text columns by stripping HTML tags, removing non-breaking spaces,
+        and normalizing whitespace.
+
+        Args:
+            df: Polars DataFrame to clean.
+            cols: List of column names to apply text cleaning.
+
+        Returns:
+            Cleaned Polars DataFrame.
+        """
+        for col in cols:
+            if col in df.columns and df.schema[col] == pl.Utf8:
+                # 1. Replace &nbsp; and \xa0 with space
+                # 2. Strip HTML tags <...>
+                # 3. Replace multiple spaces with a single space
+                # 4. Strip leading/trailing whitespaces
+                df = df.with_columns(
+                    pl.col(col)
+                    .str.replace_all(r"&nbsp;|\xa0", " ")
+                    .str.replace_all(r"<[^>]*>", "")
+                    .str.replace_all(r"\s+", " ")
+                    .str.strip_chars()
+                )
+        return df
+
+    def aggregate(self, silver_data: list[dict[str, Any]]) -> pl.DataFrame:
+        """
+        Converts Silver JSON dictionaries into a Gold Polars DataFrame with required fields.
+
+        Args:
+            silver_data: A list of dictionaries parsed from HTML.
+
+        Returns:
+            Polars DataFrame with projected fields.
+        """
+        if not silver_data:
+            return pl.DataFrame()
+
+        # Pre-process silver_data to extract products array
+        processed_data = []
+        for row in silver_data:
+            new_row = dict(row)
+
+            # Extract products from D.IMP
+            products = []
+            if "D.IMP" in row and isinstance(row["D.IMP"], list):
+                for imp in row["D.IMP"]:
+                    if isinstance(imp, dict):
+                        product = {
+                            "D.2.1.1.1": imp.get("D.2.1.1.1"),
+                            "D.3.1": imp.get("D.3.1"),
+                            "D.3.8": imp.get("D.3.8"),
+                            "D.3.4": imp.get("D.3.4"),
+                        }
+                        # Only append if at least one field is not None
+                        if any(v is not None for v in product.values()):
+                            products.append(product)
+
+            new_row["products"] = json.dumps(products) if products else None
+            processed_data.append(new_row)
+
+        # Base DataFrame
+        df = pl.DataFrame(processed_data)
+
+        core_fields = ["A.2", "A.3", "B.1.1", "E.1.1.2", "E.2.1", "E.2.2", "E.3", "E.4", "E.5.1", "E.5.2", "products"]
+
+        # Check for missing critical RAG fields
+        critical_rag_fields = ["E.3", "E.4"]
+        for row in silver_data:
+            source_id = row.get("A.2", "UNKNOWN_ID")
+            for field in critical_rag_fields:
+                if field not in row or row[field] is None or str(row[field]).strip() == "":
+                    logger.warning(f"Data mapping quality issue: Section {field} missing for {source_id}")
+
+        phase_fields = ["E.7.1", "E.7.2", "E.7.3", "E.7.4"]
+        # The Trial Status is typically found under "National trial status" or similar in EU CTR
+        # Let's project it as trial_status_coalesced
+        status_field = "National trial status"
+
+        all_fields = core_fields + phase_fields + [status_field]
+
+        # Select only required columns if they exist in the DataFrame,
+        # otherwise create them with null values
+        projection = []
+        for field in all_fields:
+            if field in df.columns:
+                if field == "A.2":
+                    projection.append(pl.col(field).alias("source_id"))
+                elif field == status_field:
+                    projection.append(pl.col(field).alias("trial_status_coalesced"))
+                else:
+                    projection.append(pl.col(field))
+            else:
+                if field == "A.2":
+                    projection.append(pl.lit(None).alias("source_id").cast(pl.Utf8))
+                elif field == status_field:
+                    projection.append(pl.lit(None).alias("trial_status_coalesced").cast(pl.Utf8))
+                else:
+                    projection.append(pl.lit(None).alias(field).cast(pl.Utf8))
+
+        # Perform projection
+        df_projected = df.select(projection)
+
+        # Generate coreason_id using UUIDv5 on source_id
+        df_projected = df_projected.with_columns(pl.col("source_id").pipe(self._generate_uuid5).alias("coreason_id"))
+
+        # Clean text columns (note: A.2 is now source_id)
+        clean_fields = ["source_id"] + [f for f in core_fields if f != "A.2"] + ["trial_status_coalesced"]
+        df_projected = self.clean_text(df_projected, clean_fields)
+
+        # Group by coreason_id to merge localized states and coalesce
+        agg_exprs = []
+        for col in df_projected.columns:
+            if col not in ("coreason_id", "source_id"):
+                if col == "trial_status_coalesced":
+                    # Coalesce statuses into a single unique sorted list separated by commas, skipping nulls
+                    agg_exprs.append(pl.col(col).drop_nulls().unique().sort().str.join(", ").alias(col))
+                else:
+                    # Take the first non-null value for all other fields
+                    agg_exprs.append(pl.col(col).drop_nulls().first().alias(col))
+
+        if not df_projected.is_empty():
+            df_projected = df_projected.group_by(["coreason_id", "source_id"], maintain_order=True).agg(agg_exprs)
+
+        # Ensure trial_status_coalesced is null rather than empty string if no statuses exist
+        if "trial_status_coalesced" in df_projected.columns:
+            df_projected = df_projected.with_columns(
+                pl.when(pl.col("trial_status_coalesced") == "")
+                .then(pl.lit(None))
+                .otherwise(pl.col("trial_status_coalesced"))
+                .alias("trial_status_coalesced")
+            )
+
+        # Flatten phase boolean flags for Phase I - IV
+        # According to the spec: "E.7.1 through E.7.4 - Trial Phase (Flattened boolean flags for Phase I - IV)"
+        for phase_field in phase_fields:
+            if df_projected.schema[phase_field] == pl.Utf8:
+                df_projected = df_projected.with_columns(
+                    pl.when(
+                        pl.col(phase_field).is_not_null()
+                        & pl.col(phase_field).str.to_lowercase().str.contains(r"\b(yes|true|1)\b")
+                    )
+                    .then(pl.lit(True))
+                    .when(
+                        pl.col(phase_field).is_not_null()
+                        & pl.col(phase_field).str.to_lowercase().str.contains(r"\b(no|false|0)\b")
+                    )
+                    .then(pl.lit(False))
+                    .otherwise(pl.lit(None))
+                    .cast(pl.Boolean)
+                    .alias(phase_field)
+                )
+            else:
+                # If the column is completely null, just cast it to Boolean
+                df_projected = df_projected.with_columns(pl.col(phase_field).cast(pl.Boolean).alias(phase_field))
+
+        return df_projected
