@@ -54,7 +54,7 @@ class EpistemicPipelineOrchestratorTask:
         bronze_loader = EpistemicBronzeLoaderTask()
         parser = EpistemicParserTask()
         aggregator = EpistemicGoldAggregatorTask()
-        gold_loader = EpistemicGoldLoaderTask()
+        gold_loader = EpistemicGoldLoaderTask(destination="postgres")
 
         state_manager = EpistemicStateManagerTask()
 
